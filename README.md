@@ -17,7 +17,7 @@ Finding a job is chaotic. You have 50 tabs open and no idea if your CV actually 
 
 | Job Opportunities | ATS Optimizer |
 |:---:|:---:|
-| ![Dashboard](assets/dashboard.png) | ![ATS Optimizer](assets/ats-optimizer.png) |
+| ![Dashboard](assets/dashboard.png) | ![ATS Optimizer](assets/ats checker.png) |
 | *Real-time Job Feed* | *AI Resume Scoring* |
 
 ## 🛠️ Tech Stack
