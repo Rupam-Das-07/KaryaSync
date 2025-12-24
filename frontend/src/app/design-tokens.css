@@ -1,0 +1,47 @@
+:root {
+  /* LIGHT: Clean, Professional SaaS */
+  --bg-page: #F8FAFC;        /* Slate 50 */
+  --bg-surface: #FFFFFF;     /* White */
+  --bg-surface-muted: #F1F5F9; /* Slate 100 */
+  
+  --text-primary: #0F172A;   /* Slate 900 */
+  --text-secondary: #475569; /* Slate 600 */
+  --text-tertiary: #94A3B8;  /* Slate 400 */
+  
+  --border-subtle: #E2E8F0;  /* Slate 200 */
+  --border-strong: #CBD5E1;  /* Slate 300 */
+  
+  --accent-primary: #4F46E5; /* Indigo 600 */
+  --accent-strong: #4338CA;  /* Indigo 700 */
+  --accent-subtle: #EEF2FF;  /* Indigo 50 */
+  
+  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --shadow-card-hover: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+}
+
+.dark {
+  /* DARK: Deep Blue/Black Slate */
+  --bg-page: #020617;        /* Slate 950 */
+  --bg-surface: #0F172A;     /* Slate 900 */
+  --bg-surface-muted: #1E293B; /* Slate 800 */
+  
+  --text-primary: #F8FAFC;   /* Slate 50 */
+  --text-secondary: #94A3B8; /* Slate 400 */
+  --text-tertiary: #64748B;  /* Slate 500 */
+  
+  --border-subtle: #1E293B;  /* Slate 800 */
+  --border-strong: #334155;  /* Slate 700 */
+  
+  --accent-primary: #6366F1; /* Indigo 500 */
+  --accent-strong: #4F46E5;  /* Indigo 600 */
+  --accent-subtle: rgba(99, 102, 241, 0.15); /* Indigo Alpha */
+  
+  --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.1);
+  --shadow-card-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+}
+
+/* Base Transition */
+body {
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+}

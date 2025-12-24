@@ -1,0 +1,10 @@
+requests
+sqlalchemy
+psycopg[binary]
+python-dotenv
+python-jobspy
+pandas
+scikit-learn
+pypdf
+duckduckgo-search
+beautifulsoup4

@@ -1,0 +1,82 @@
+@import "tailwindcss";
+@import "./design-tokens.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* 1. VIEW TRANSITION API SETUP */
+::view-transition-group(root) {
+  animation-duration: 0.75s;
+}
+::view-transition-new(root),
+::view-transition-old(root) {
+  /* Stop default cross-fade; we handle it manually in JS or just let clip-path work */
+  mix-blend-mode: normal; 
+}
+
+/* Ensure the 'new' view is on top during the animation */
+::view-transition-new(root) {
+  z-index: 2147483646; /* High z-index */
+}
+::view-transition-old(root) {
+  z-index: 2147483646;
+}
+
+/* Fallback: Reduced motion preference disables the fancy clip-path */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(root),
+  ::view-transition-new(root),
+  ::view-transition-old(root) {
+    animation: none !important;
+  }
+}
+
+
+
+body {
+  font-family: var(--font-outfit), sans-serif;
+  @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 antialiased;
+}
+
+/* 3. Professional Utilities (Clean SaaS Look) */
+
+.glass-surface {
+  /* Subtle, Flat, Bordered - No Glass */
+  @apply bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-none;
+}
+
+/* Card Hover - Crisp Border Transition, Minimal Lift */
+.hover-lift {
+  @apply transition-all duration-200 ease-out;
+}
+.hover-lift:hover {
+  @apply -translate-y-px border-indigo-400 dark:border-indigo-600 shadow-none; /* Linear style focus */
+}
+
+/* Table Row Hover */
+.row-hover-effect {
+  @apply transition-colors duration-150;
+}
+.row-hover-effect:hover {
+  @apply bg-slate-50 dark:bg-slate-800/50;
+}
+
+/* Premium Primary Button - Linear Style */
+.btn-primary-premium {
+  @apply bg-indigo-600 text-white font-medium shadow-sm border border-transparent transition-all duration-200 rounded-full;
+}
+.btn-primary-premium:hover {
+  @apply bg-indigo-700 shadow-none;
+}
+.btn-primary-premium:active {
+  @apply bg-indigo-800 scale-[0.98];
+}
+
+/* Sidebar Active - Subtle Marker */
+.sidebar-item-active {
+  @apply bg-slate-100 dark:bg-slate-800/50 text-indigo-600 dark:text-indigo-400 font-medium relative;
+}
+.sidebar-item-active::before {
+  content: "";
+  @apply absolute left-0 top-1 bottom-1 w-1 bg-indigo-600 rounded-r-md;
+}
+
