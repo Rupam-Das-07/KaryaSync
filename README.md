@@ -1,9 +1,13 @@
-# 🚀 KaryaSync
+<div align="center">
+  <img src="assets/app-name.png" alt="KaryaSync Logo" height="80" />
+  <br/>
+  <h1>The Operating System for Your Career</h1>
+  <p>
+    <b>Find jobs, optimize your resume, and get hired—all in one privacy-focused dashboard.</b>
+  </p>
+</div>
 
-> **The Operating System for Your Career.**
-> Find jobs and optimize your resume—all in one privacy-focused dashboard.
-
-![KaryaSync Dashboard](assets/dashboard.png)
+---
 
 ## 🌟 Why KaryaSync?
 Finding a job is chaotic. You have 50 tabs open and no idea if your CV actually matches the Job Description.
@@ -17,7 +21,7 @@ Finding a job is chaotic. You have 50 tabs open and no idea if your CV actually 
 
 | Job Opportunities | ATS Optimizer |
 |:---:|:---:|
-| ![Dashboard](assets/dashboard.png) | ![ATS Optimizer](assets/ats checker.png) |
+| ![Dashboard](assets/dashboard.png) | ![ATS Optimizer](assets/ats-optimizer.png) |
 | *Real-time Job Feed* | *AI Resume Scoring* |
 
 ## 🛠️ Tech Stack
