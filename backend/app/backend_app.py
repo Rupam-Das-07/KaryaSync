@@ -9,8 +9,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import agent_logic
-from fastapi import BackgroundTasks
 from app.models.queue import SearchQueue, SearchStatus
 
 def _job_type_from_legacy(value: str | None) -> Optional[schemas.JobType]:
@@ -665,35 +663,4 @@ async def analyze_ats_upload(
     recommendations=result.get("recommendations", []),
     missing_keywords=result.get("missing_keywords", [])
   )
-@app.post("/api/deep-scan")
-async def start_deep_scan(
-    query: str, 
-    background_tasks: BackgroundTasks, 
-    db: Session = Depends(get_db)
-):
-    """
-    Triggered by the frontend 'Deep Scan' button.
-    It returns 'OK' immediately, then runs the scan in the background.
-    """
-    print(f"🔔 API Received Deep Scan Request for: {query}")
 
-    # 1. Create a "Pending" task in the database
-    # (This lets your frontend show a 'Scanning...' status to the user)
-    new_task = SearchQueue(
-        user_id=1,  # You can replace this with current_user.id later
-        query=query,
-        status=SearchStatus.PENDING,
-        filters={"scan_mode": "DEEP", "location": "India"}
-    )
-    db.add(new_task)
-    db.commit()
-    db.refresh(new_task)
-
-    # 2. The Magic Line: Pass the task ID to the agent logic
-    # This runs 'run_jobspy_scan' completely in the background!
-    background_tasks.add_task(agent_logic.run_jobspy_scan, new_task.id, db)
-
-    return {
-        "message": "Deep Scan started in the cloud! ☁️", 
-        "task_id": new_task.id
-    }
