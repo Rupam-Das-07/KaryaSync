@@ -704,58 +704,110 @@ def handle_ats_task(task, db):
 # MAIN ORCHESTRATOR
 # =============================================================================
 
-def main():
-    print("🦸 Super Worker Watching Queue...")
-    from sqlalchemy.exc import OperationalError
-    
-    while True:
-        try:
-            db = SessionLocal()
-        except Exception as e:
-            print(f"⚠️ DB Connection Failed: {e}")
-            time.sleep(5)
-            continue
-            
-        try:
-            stmt = select(SearchQueue).where(SearchQueue.status == SearchStatus.PENDING).limit(1)
-            task = db.execute(stmt).scalar_one_or_none()
 
-            if task:
+# =============================================================================
+# MAIN ORCHESTRATOR
+# =============================================================================
+
+LAST_RUN_FILE = "agent_last_run.txt"
+
+def check_deep_scan_guard():
+    """Checks if a deep scan ran in the last 6 hours."""
+    if os.path.exists(LAST_RUN_FILE):
+        try:
+            with open(LAST_RUN_FILE, "r") as f:
+                last_ts = float(f.read().strip())
+            
+            hours_diff = (time.time() - last_ts) / 3600
+            if hours_diff < 6:
+                print(f"⏱️ Safety Guard: Last run was {hours_diff:.2f} hours ago (< 6h).")
+                return False
+        except Exception:
+            pass # File corrupt or unreadable, ignore
+    return True
+
+def update_deep_scan_guard():
+    """Updates the last run timestamp."""
+    try:
+        with open(LAST_RUN_FILE, "w") as f:
+            f.write(str(time.time()))
+    except Exception as e:
+        print(f"⚠️ Failed to update lock file: {e}")
+
+def main():
+    print("🚀 Agent Starting... (Single Execution Mode)")
+    
+    try:
+        db = SessionLocal()
+        print("✅ Database Connected")
+    except Exception as e:
+        print(f"❌ Fatal Error: DB Connection Failed: {e}")
+        sys.exit(1)
+
+    try:
+        # Fetch all pending tasks
+        stmt = select(SearchQueue).where(SearchQueue.status == SearchStatus.PENDING)
+        tasks = db.execute(stmt).scalars().all()
+
+        if not tasks:
+            print("📭 No pending tasks found in queue.")
+        else:
+            print(f"📋 Found {len(tasks)} pending tasks.")
+
+        for task in tasks:
+            print(f"⚡ Picking up Task ID: {task.id} [{task.status}]")
+            
+            try:
                 task.status = SearchStatus.PROCESSING
                 db.commit()
+
+                filters = task.filters or {}
+                scan_mode = filters.get("scan_mode", "FAST")
+                task_type = getattr(task, 'task_type', 'SEARCH')
+
+                # DEEP SCAN SAFETY GUARD
+                if task_type == 'SEARCH' and scan_mode == "DEEP":
+                    if not check_deep_scan_guard():
+                        print("🛑 Skipping run: agent executed recently")
+                        task.status = SearchStatus.PENDING # Revert to pending? Or Failed? User said "exit gracefully".
+                        # If we exit, the task remains PROCESSING if we don't fix it.
+                        # But we already set it to PROCESSING.
+                        # Ideally, we should set it back to PENDING or SKIPPED.
+                        # Since user wants to "exit", let's revert and exit.
+                        task.status = SearchStatus.PENDING
+                        db.commit()
+                        sys.exit(0)
                 
-                try:
-                    task_type = getattr(task, 'task_type', 'SEARCH')
-                    if task_type == 'ATS':
-                        handle_ats_task(task, db)
-                    else:
-                        handle_search_task(task, db)
-                    task.status = SearchStatus.COMPLETED
-                except Exception as e:
-                    print(f"❌ Task Execution Failed: {e}")
-                    task.status = SearchStatus.FAILED
-                    # Try to save failure status
-                    try: db.commit()
-                    except: db.rollback()
-                
+                # EXECUTE
+                if task_type == 'ATS':
+                    handle_ats_task(task, db)
+                else:
+                    handle_search_task(task, db)
+                    if scan_mode == "DEEP":
+                        update_deep_scan_guard()
+
+                task.status = SearchStatus.COMPLETED
                 db.commit()
-            else:
-                time.sleep(2)
-                
-        except OperationalError as e:
-            print(f"🔄 DB Connection Lost. Retrying... ({e})")
-            db.rollback()
-            time.sleep(5)
-            # engine.dispose() # Optional: Force reconnect
-        except Exception as e:
-            print(f"Loop Error: {e}")
-            db.rollback()
-            time.sleep(5)
-        finally:
-            try:
-                db.close()
-            except Exception:
-                pass
+                print(f"✅ Task {task.id} Completed.")
+
+            except Exception as e:
+                print(f"❌ Task {task.id} Failed: {e}")
+                task.status = SearchStatus.FAILED
+                try: db.commit()
+                except: db.rollback()
+                # We do not exit on individual task failure, try next
+        
+    except Exception as e:
+        print(f"❌ Unexpected Error: {e}")
+        db.rollback()
+        sys.exit(1)
+    finally:
+        try:
+            db.close()
+            print("🔌 DB Connection Closed.")
+        except: pass
+        
+    print("🏁 Agent Execution Finished.")
 
 if __name__ == "__main__":
     main()
