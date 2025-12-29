@@ -12,4 +12,4 @@ beautifulsoup4==4.12.3
 requests==2.32.3
 email-validator==2.1.0
 scikit-learn
-
+python-multipart
