@@ -48,10 +48,19 @@ const SkeletonRow = () => (
 );
 
 export default function DashboardPage() {
-  const [parent] = useAutoAnimate();
-  const [loading, setLoading] = useState(true);
-  const [internships, setInternships] = useState<Job[]>([]);
-  const [fullTimeJobs, setFullTimeJobs] = useState<Job[]>([]);
+  /* 
+    PAGINATION STATE 
+    - Simplified to a single list as per user request.
+    - Tab switching relies on Backend Cache for speed.
+  */
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(20);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Filters & UI State
   const [scanning, setScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState("");
   const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
@@ -74,12 +83,17 @@ export default function DashboardPage() {
         router.push("/onboarding");
         return;
       }
-      setLoading(false);
-      fetchJobs();
+      // Initial Load
+      fetchJobs(1, true);
       fetchSavedJobs(user.id);
     };
     checkAuth();
   }, [router, supabase]);
+
+  // Trigger fetch when Tab changes (Reset pagination)
+  useEffect(() => {
+    fetchJobs(1, true);
+  }, [activeTab]);
 
   // Realtime Listener
   useEffect(() => {
@@ -89,12 +103,14 @@ export default function DashboardPage() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'job_listings' },
         (payload) => {
-
           const newJob = payload.new as Job;
-          if (checkIsInternship(newJob)) {
-            setInternships((prev) => [newJob, ...prev]);
-          } else {
-            setFullTimeJobs((prev) => [newJob, ...prev]);
+          // Only prepend if it matches current view
+          const isIntern = checkIsInternship(newJob);
+          const visibleTab = isIntern ? 'INTERNSHIP' : 'FULL_TIME';
+
+          if (visibleTab === activeTab) {
+            setJobs((prev) => [newJob, ...prev]);
+            setTotal((t) => t + 1);
           }
         }
       )
@@ -103,49 +119,71 @@ export default function DashboardPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [supabase]);
+  }, [supabase, activeTab]);
 
   // Helper moved up
   const checkIsInternship = (job: Job) => {
-    const type = job.job_type?.toLowerCase() || '';
-    const title = job.role_title?.toLowerCase() || '';
-    return type === 'internship' || title.includes('intern');
+    const type = job.job_type ? String(job.job_type).toUpperCase() : '';
+    const title = job.role_title ? String(job.role_title).toLowerCase() : '';
+    return type === 'INTERNSHIP' || title.includes('intern');
   };
 
-  const fetchJobs = async () => {
+  const fetchJobs = async (pageNum: number, reset_list: boolean = false) => {
+    if (reset_list) {
+      setLoading(true);
+      setPage(1);
+    } else {
+      setLoadingMore(true);
+    }
+
     try {
-      // Optimizing with Backend Pagination & Caching
-      const res = await fetch(`${API_BASE_URL}/opportunities?page=1&limit=20`);
+      // API Call with Pagination & Filtering
+      // job_type param ensures we only get relevant jobs for the tab
+      const queryParams = new URLSearchParams({
+        page: pageNum.toString(),
+        limit: limit.toString(),
+        job_type: activeTab
+      });
+
+      const res = await fetch(`${API_BASE_URL}/opportunities?${queryParams.toString()}`);
 
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
 
-      const json = await res.json();
-      // Backend returns { data: [], page: 1, limit: 20, total: ... }
-      const rawJobs = json.data || [];
+      const response = await res.json();
 
-      // Strict Partitioning Logic (Preserved)
-      const classifiedInternships = rawJobs.filter((job: Job) => {
-        const type = job.job_type ? String(job.job_type).toUpperCase() : '';
-        const title = job.role_title ? String(job.role_title).toLowerCase() : '';
-        const isIntern = type === 'INTERNSHIP' || title.includes('intern');
-        return isIntern;
-      });
+      // 1. Validate Response Shape (Safety First)
+      const data = response.data || [];
+      const totalCount = response.total || 0;
 
-      // Full Time is everything that is NOT classified as an internship above
-      const classifiedFullTime = rawJobs.filter((job: Job) =>
-        !classifiedInternships.includes(job)
-      );
+      // 2. State Updates
+      if (reset_list) {
+        setJobs(data);
+      } else {
+        // Append new jobs (filtering out potential duplicates if any)
+        setJobs(prev => {
+          const existingIds = new Set(prev.map(j => j.id));
+          const newUnique = data.filter((j: Job) => !existingIds.has(j.id));
+          return [...prev, ...newUnique];
+        });
+      }
 
-      setInternships(classifiedInternships);
-      setFullTimeJobs(classifiedFullTime);
+      setTotal(totalCount);
+      setPage(pageNum); // Sync page state
       setIsBackendDown(false);
+
     } catch (err) {
       console.error("🔥 Error fetching jobs via API:", err);
-      // Fallback? Or just set error state
+      if (reset_list) setJobs([]); // Clear on error if it was a reset
       setIsBackendDown(true);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
+  };
+
+  const handleLoadMore = () => {
+    const nextPage = page + 1;
+    fetchJobs(nextPage, false);
   };
 
   const fetchSavedJobs = async (userId: string) => {
@@ -207,7 +245,7 @@ export default function DashboardPage() {
   */
   const handleRefresh = async () => {
     // Re-fetch jobs first (just in case)
-    await fetchJobs();
+    await fetchJobs(1, true);
     // Trigger a fresh fast scan
     await triggerDiscovery('FAST');
   };
@@ -302,7 +340,8 @@ export default function DashboardPage() {
         if (currentTask.status === 'COMPLETED') {
           clearInterval(pollInterval);
           setScanMessage("Fresh Jobs Found! Updating...");
-          await fetchJobs(); // 4. Fetch the new jobs
+          setScanMessage("Fresh Jobs Found! Updating...");
+          await fetchJobs(1, true); // 4. Fetch the new jobs
           setTimeout(() => setScanning(false), 1500);
         }
       }, 2000);
@@ -346,13 +385,7 @@ export default function DashboardPage() {
     return "Not disclosed";
   };
 
-  const getDisplayJobs = () => {
-    if (activeTab === 'INTERNSHIP') return internships;
-    if (activeTab === 'FULL_TIME') return fullTimeJobs;
-    return fullTimeJobs; // Default fallback
-  };
 
-  const displayJobs = getDisplayJobs();
 
   if (loading) {
     return (
@@ -458,7 +491,7 @@ export default function DashboardPage() {
 
         {/* Content Area */}
         <AnimatePresence mode="wait">
-          {displayJobs.length === 0 ? (
+          {jobs.length === 0 ? (
             <motion.div
               key="empty"
               initial={{ opacity: 0, y: 10 }}
@@ -525,7 +558,7 @@ export default function DashboardPage() {
                           {loading ? (
                             [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
                           ) : (
-                            displayJobs.map((job, index) => {
+                            jobs.map((job, index) => {
                               const isInternship = job.job_type === 'INTERNSHIP' || job.role_title.toLowerCase().includes('intern');
                               return (
                                 <tr
@@ -605,7 +638,7 @@ export default function DashboardPage() {
 
                   {/* Mobile Card List (Table Mode) */}
                   <div className="md:hidden flex flex-col gap-4">
-                    {displayJobs.map((job) => {
+                    {jobs.map((job) => {
                       const isInternship = checkIsInternship(job);
                       return (
                         <div
@@ -668,7 +701,7 @@ export default function DashboardPage() {
               {/* Grid View (Fallback) */}
               {viewMode === 'grid' && (
                 <div className="grid gap-4 md:grid-cols-1">
-                  {displayJobs.map((job) => {
+                  {jobs.map((job) => {
                     const isInternship = checkIsInternship(job);
                     return (
                       <motion.div
@@ -698,6 +731,26 @@ export default function DashboardPage() {
                       </motion.div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Load More Button */}
+              {jobs.length < total && (
+                <div className="mt-8 flex justify-center pb-8">
+                  <button
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                    className="group relative px-6 py-2.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 shadow-sm transition-all hover:shadow-md disabled:opacity-50"
+                  >
+                    {loadingMore ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading...
+                      </span>
+                    ) : (
+                      "Load more"
+                    )}
+                  </button>
                 </div>
               )}
             </motion.div>
