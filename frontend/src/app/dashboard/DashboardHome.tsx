@@ -114,17 +114,17 @@ export default function DashboardPage() {
 
   const fetchJobs = async () => {
     try {
-      const { data, error } = await supabase
-        .from('job_listings')
-        .select('*')
-        .order('created_at', { ascending: false });
+      // Optimizing with Backend Pagination & Caching
+      const res = await fetch(`${API_BASE_URL}/opportunities?page=1&limit=20`);
 
-      if (error) throw error;
+      if (!res.ok) throw new Error(`API Error: ${res.status}`);
 
-      const rawJobs = data || [];
+      const json = await res.json();
+      // Backend returns { data: [], page: 1, limit: 20, total: ... }
+      const rawJobs = json.data || [];
 
-      // Strict Partitioning Logic
-      const classifiedInternships = rawJobs.filter(job => {
+      // Strict Partitioning Logic (Preserved)
+      const classifiedInternships = rawJobs.filter((job: Job) => {
         const type = job.job_type ? String(job.job_type).toUpperCase() : '';
         const title = job.role_title ? String(job.role_title).toLowerCase() : '';
         const isIntern = type === 'INTERNSHIP' || title.includes('intern');
@@ -132,7 +132,7 @@ export default function DashboardPage() {
       });
 
       // Full Time is everything that is NOT classified as an internship above
-      const classifiedFullTime = rawJobs.filter(job =>
+      const classifiedFullTime = rawJobs.filter((job: Job) =>
         !classifiedInternships.includes(job)
       );
 
@@ -140,7 +140,9 @@ export default function DashboardPage() {
       setFullTimeJobs(classifiedFullTime);
       setIsBackendDown(false);
     } catch (err) {
-      console.error("🔥 Error fetching jobs:", err);
+      console.error("🔥 Error fetching jobs via API:", err);
+      // Fallback? Or just set error state
+      setIsBackendDown(true);
     } finally {
       setLoading(false);
     }

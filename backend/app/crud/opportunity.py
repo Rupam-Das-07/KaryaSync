@@ -29,14 +29,30 @@ def list_opportunities(
   *,
   source: Optional[OpportunitySource] = None,
   status: Optional[OpportunityStatus] = None,
-) -> List[Opportunity]:
+  job_type: Optional[schemas.JobType] = None,
+  skip: int = 0,
+  limit: int = 20,
+) -> tuple[List[Opportunity], int]:
   stmt = select(Opportunity)
   if source:
     stmt = stmt.filter(Opportunity.source == source)
   if status:
     stmt = stmt.filter(Opportunity.status == status)
+  if job_type:
+    stmt = stmt.filter(Opportunity.job_type == job_type)
+  
+  # Total count query
+  # Note: A separate count query is often cleaner or func.count()
+  # For simplicity with the existing select structure:
+  from sqlalchemy import func
+  count_stmt = select(func.count()).select_from( stmt.subquery() )
+  total = db.scalar(count_stmt) or 0
+
+  # Pagination
   stmt = stmt.order_by(Opportunity.created_at.desc())
-  return list(db.scalars(stmt))
+  stmt = stmt.offset(skip).limit(limit)
+  
+  return list(db.scalars(stmt)), total
 
 
 def create_user_opportunity(

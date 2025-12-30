@@ -136,5 +136,11 @@ class StatusHistory(BaseSchema):
   comment: Optional[str] = None
   created_at: datetime
 
+class PaginatedOpportunities(BaseSchema):
+  data: List[Opportunity]
+  page: int
+  limit: int
+  total: int
+
 from .queue import SearchQueueCreate, SearchQueueResponse, DiscoverRequest
 

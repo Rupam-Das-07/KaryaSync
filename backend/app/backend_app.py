@@ -147,48 +147,122 @@ app.add_middleware(
 )
 
 
+
+# ========================
+# CACHE IMPLEMENTATION
+# ========================
+import time
+from threading import Lock
+
+_CACHE = {}
+_CACHE_LOCK = Lock()
+CACHE_TTL = 300  # 5 minutes
+
+def get_cache(key: str):
+    with _CACHE_LOCK:
+        if key in _CACHE:
+            data, timestamp = _CACHE[key]
+            if time.time() - timestamp < CACHE_TTL:
+                return data
+            else:
+                del _CACHE[key]  # Expired
+    return None
+
+def set_cache(key: str, data: any):
+    with _CACHE_LOCK:
+        _CACHE[key] = (data, time.time())
+
+def clear_cache():
+    with _CACHE_LOCK:
+        _CACHE.clear()
+
 @app.get("/health")
 def health() -> dict[str, str]:
   return {"status": "ok"}
 
 
-@app.get("/opportunities", response_model=List[schemas.Opportunity])
+@app.get("/opportunities", response_model=schemas.PaginatedOpportunities)
 def list_opportunities(
+  page: int = 1,
+  limit: int = 20,
   source: Optional[str] = None,
   status: Optional[str] = None,
+  job_type: Optional[str] = None,
   db: Session = Depends(get_db),
-) -> List[schemas.Opportunity]:
+) -> schemas.PaginatedOpportunities:
+  # 1. Check Cache
+  cache_key = f"opps:p{page}:l{limit}:src{source}:st{status}:jt{job_type}"
+  cached = get_cache(cache_key)
+  if cached:
+      return cached
+
+  # 2. Prepare Filters
+  offset = (page - 1) * limit
+  
+  src_enum = schemas.OpportunitySource(source) if source else None
+  status_enum = schemas.OpportunityStatus(status) if status else None
+  
+  type_enum = None
+  if job_type:
+      try: type_enum = schemas.JobType(job_type)
+      except: pass
+  
+  total = 0
+  data = []
+
+  # 3. Query DB
   if db.bind:
-    return opportunity_crud.list_opportunities(
-      db=db,
-      source=schemas.OpportunitySource(source) if source else None,
-      status=schemas.OpportunityStatus(status) if status else None,
-    )
-  # fallback to legacy demo data for environments without DB
-  results: List[schemas.Opportunity] = []
-  for legacy in DEMO_OPPORTUNITIES:
-    results.append(
-      schemas.Opportunity(
-        id=legacy.id,
-        company_name=legacy.company,
-        role_title=legacy.role,
-        job_type=_job_type_from_legacy(legacy.job_type),
-        work_mode=_work_mode_from_legacy(legacy.work_mode),
-        location=legacy.location,
-        salary_min=None,
-        salary_max=None,
-        currency="INR",
-        apply_link=legacy.link,
-        source=_source_from_legacy(legacy.source),
-        status=_status_from_legacy(legacy.status),
-        status_note=f"Closed on {legacy.status_date}" if legacy.status_date else None,
-        source_metadata={"origin": "demo"},
-        last_checked_at=_as_datetime(legacy.last_checked),
-        created_at=_as_datetime(legacy.last_checked),
-        updated_at=_as_datetime(legacy.last_checked),
+      data, total = opportunity_crud.list_opportunities(
+        db=db,
+        source=src_enum,
+        status=status_enum,
+        job_type=type_enum,
+        skip=offset,
+        limit=limit,
       )
-    )
-  return results
+  else:
+      # Legacy Fallback (No DB)
+      filtered = []
+      for legacy in DEMO_OPPORTUNITIES:
+          # Basic filtering simulation
+          if source and legacy.source != source: continue
+          if status and legacy.status != status: continue
+          
+          # Convert legacy to schema for list consistency
+          # (Simplified for fallback)
+          op = schemas.Opportunity(
+              id=legacy.id,
+              company_name=legacy.company,
+              role_title=legacy.role,
+              job_type=_job_type_from_legacy(legacy.job_type),
+              work_mode=_work_mode_from_legacy(legacy.work_mode),
+              location=legacy.location,
+              apply_link=legacy.link,
+              source=_source_from_legacy(legacy.source),
+              status=_status_from_legacy(legacy.status),
+              created_at=_as_datetime(legacy.last_checked),
+              updated_at=_as_datetime(legacy.last_checked)
+          )
+          
+          if type_enum and op.job_type != type_enum: continue
+          filtered.append(op)
+          
+      total = len(filtered)
+      start = offset
+      end = offset + limit
+      data = filtered[start:end]
+
+  # 4. Construct Response
+  response = schemas.PaginatedOpportunities(
+      data=data,
+      page=page,
+      limit=limit,
+      total=total
+  )
+
+  # 5. Set Cache
+  set_cache(cache_key, response)
+  return response
 
 
 @app.post("/opportunities", response_model=schemas.Opportunity)
@@ -201,6 +275,10 @@ def create_opportunity(
       status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
       detail="Database not configured for write operations.",
     )
+  
+  # Invalidate Cache on New Insert
+  clear_cache()
+  
   return opportunity_crud.create_opportunity(db, opportunity_in)
 
 
