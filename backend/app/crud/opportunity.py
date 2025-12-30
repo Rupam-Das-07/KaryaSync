@@ -42,12 +42,18 @@ def list_opportunities(
     stmt = stmt.filter(Opportunity.job_type == job_type)
   
   # Total count query
-  # Note: A separate count query is often cleaner or func.count()
-  # For simplicity with the existing select structure:
+  # Use a separate simpler query for performance and reliability
   from sqlalchemy import func
-  count_stmt = select(func.count()).select_from( stmt.subquery() )
+  count_stmt = select(func.count(Opportunity.id))
+  if source:
+    count_stmt = count_stmt.filter(Opportunity.source == source)
+  if status:
+    count_stmt = count_stmt.filter(Opportunity.status == status)
+  if job_type:
+    count_stmt = count_stmt.filter(Opportunity.job_type == job_type)
+    
   total = db.scalar(count_stmt) or 0
-
+  
   # Pagination
   stmt = stmt.order_by(Opportunity.created_at.desc())
   stmt = stmt.offset(skip).limit(limit)

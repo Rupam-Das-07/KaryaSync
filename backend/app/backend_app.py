@@ -204,7 +204,7 @@ def list_opportunities(
   
   type_enum = None
   if job_type:
-      try: type_enum = schemas.JobType(job_type)
+      try: type_enum = schemas.JobType(job_type.lower())
       except: pass
   
   total = 0
