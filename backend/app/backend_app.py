@@ -564,6 +564,37 @@ def discover_opportunities(
   db.commit()
   db.refresh(queue_item)
   
+  # 5. Trigger GitHub Action (Instant Deep Scan)
+  try:
+      import requests
+      import os
+      
+      git_token = os.environ.get("GITHUB_ACTIONS_TOKEN")
+      git_owner = os.environ.get("GITHUB_REPO_OWNER")
+      git_repo = os.environ.get("GITHUB_REPO_NAME")
+      git_workflow = os.environ.get("GITHUB_WORKFLOW_FILE", "job_agent.yml")
+      
+      if git_token and git_owner and git_repo:
+          url = f"https://api.github.com/repos/{git_owner}/{git_repo}/actions/workflows/{git_workflow}/dispatches"
+          headers = {
+              "Authorization": f"Bearer {git_token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28"
+          }
+          payload = {"ref": "main"}
+          
+          resp = requests.post(url, json=payload, headers=headers, timeout=5)
+          
+          if resp.status_code in [200, 204]:
+              logger.info("GitHub Action triggered successfully")
+          else:
+              logger.error(f"Failed to trigger GitHub Action: {resp.status_code} - {resp.text}")
+      else:
+          logger.warning("Skipping GitHub Action trigger: Missing env vars")
+          
+  except Exception as e:
+      logger.error(f"Error triggering GitHub Action: {str(e)}")
+  
   return queue_item
 
 
