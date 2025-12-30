@@ -56,6 +56,7 @@ export default function DashboardPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
+  const [tableBodyRef] = useAutoAnimate<HTMLTableSectionElement>();
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -408,7 +409,7 @@ export default function DashboardPage() {
               <p className="text-xs text-red-600/80">Unable to reach the API server. Please ensure the Python backend is running.</p>
             </div>
             <button
-              onClick={() => { setIsBackendDown(false); fetchJobs(); fetchSavedJobs((supabase.auth as any).user?.id || ''); }}
+              onClick={() => { setIsBackendDown(false); fetchJobs(1, false); fetchSavedJobs((supabase.auth as any).user?.id || ''); }}
               className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded text-xs font-semibold transition-colors flex items-center gap-1"
             >
               <RefreshCw className="h-3 w-3" /> Retry
@@ -554,7 +555,7 @@ export default function DashboardPage() {
                             </th>
                           </tr>
                         </thead>
-                        <tbody ref={parent} className="divide-y divide-gray-200 dark:divide-gray-800">
+                        <tbody ref={tableBodyRef} className="divide-y divide-gray-200 dark:divide-gray-800">
                           {loading ? (
                             [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
                           ) : (
