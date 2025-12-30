@@ -388,6 +388,23 @@ export default function DashboardPage() {
 
 
 
+  // Strict Filtering Logic
+  const filteredJobs = jobs.filter(job => {
+    if (activeTab === 'FULL_TIME') return true;
+
+    // Internship Rules
+    const type = (job.job_type || '').toLowerCase();
+    const title = (job.role_title || '').toLowerCase();
+
+    // 1. Must be an internship
+    const isIntern = type === 'internship' || type.includes('intern') || title.includes('intern');
+
+    // 2. Must NOT be full-time (Strict Exclusion)
+    const isFullTime = type.includes('full') || title.includes('full-time');
+
+    return isIntern && !isFullTime;
+  });
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-[#0F1014]">
@@ -492,7 +509,7 @@ export default function DashboardPage() {
 
         {/* Content Area */}
         <AnimatePresence mode="wait">
-          {jobs.length === 0 ? (
+          {filteredJobs.length === 0 ? (
             <motion.div
               key="empty"
               initial={{ opacity: 0, y: 10 }}
@@ -559,7 +576,7 @@ export default function DashboardPage() {
                           {loading ? (
                             [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
                           ) : (
-                            jobs.map((job, index) => {
+                            filteredJobs.map((job, index) => {
                               const isInternship = job.job_type === 'INTERNSHIP' || job.role_title.toLowerCase().includes('intern');
                               return (
                                 <tr
@@ -639,7 +656,7 @@ export default function DashboardPage() {
 
                   {/* Mobile Card List (Table Mode) */}
                   <div className="md:hidden flex flex-col gap-4">
-                    {jobs.map((job) => {
+                    {filteredJobs.map((job) => {
                       const isInternship = checkIsInternship(job);
                       return (
                         <div
@@ -702,7 +719,7 @@ export default function DashboardPage() {
               {/* Grid View (Fallback) */}
               {viewMode === 'grid' && (
                 <div className="grid gap-4 md:grid-cols-1">
-                  {jobs.map((job) => {
+                  {filteredJobs.map((job) => {
                     const isInternship = checkIsInternship(job);
                     return (
                       <motion.div
