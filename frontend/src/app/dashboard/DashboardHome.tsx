@@ -17,7 +17,9 @@ import {
 } from "lucide-react";
 import { checkOnboardingStatus } from "@/utils/onboarding";
 import ScanLoader from "@/components/ScanLoader";
-import { API_BASE_URL } from "@/utils/supabase/client";
+// Hardcode Render Backend URL as requested
+const BACKEND_URL = "https://karyasync.onrender.com";
+// import { API_BASE_URL } from "@/utils/supabase/client";
 
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from 'clsx';
@@ -129,24 +131,22 @@ export default function DashboardPage() {
     return type === 'INTERNSHIP' || title.includes('intern');
   };
 
-  const fetchJobs = async (pageNum: number, reset_list: boolean = false) => {
-    if (reset_list) {
-      setLoading(true);
-      setPage(1);
-    } else {
-      setLoadingMore(true);
-    }
-
+  const fetchJobs = async (pageNum = 1, append = false) => {
     try {
-      // API Call with Pagination & Filtering
-      // job_type param ensures we only get relevant jobs for the tab
-      const queryParams = new URLSearchParams({
+      if (!append) setLoading(true);
+      else setLoadingMore(true);
+
+      const offset = (pageNum - 1) * limit; // For verification, though backend handles page param
+
+      // Use configured BACKEND_URL
+      // Construct URL with query params
+      const params = new URLSearchParams({
         page: pageNum.toString(),
         limit: limit.toString(),
         job_type: activeTab
       });
 
-      const res = await fetch(`${API_BASE_URL}/opportunities?${queryParams.toString()}`);
+      const res = await fetch(`${BACKEND_URL}/opportunities?${params.toString()}`);
 
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
 
@@ -157,7 +157,8 @@ export default function DashboardPage() {
       const totalCount = response.total || 0;
 
       // 2. State Updates
-      if (reset_list) {
+      // 2. State Updates
+      if (!append) {
         setJobs(data);
       } else {
         // Append new jobs (filtering out potential duplicates if any)
@@ -174,7 +175,7 @@ export default function DashboardPage() {
 
     } catch (err) {
       console.error("🔥 Error fetching jobs via API:", err);
-      if (reset_list) setJobs([]); // Clear on error if it was a reset
+      if (!append) setJobs([]); // Clear on error if it was a reset
       setIsBackendDown(true);
     } finally {
       setLoading(false);
@@ -189,7 +190,7 @@ export default function DashboardPage() {
 
   const fetchSavedJobs = async (userId: string) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/users/${userId}/saved_jobs`);
+      const res = await fetch(`${BACKEND_URL}/users/${userId}/saved_jobs`);
       if (!res.ok) {
         throw new Error(`API Error: ${res.status}`);
       }
@@ -218,7 +219,7 @@ export default function DashboardPage() {
     });
 
     try {
-      const res = await fetch(`${API_BASE_URL}/users/${user.id}/saved_jobs/${jobId}`, {
+      const res = await fetch(`${BACKEND_URL}/users/${user.id}/saved_jobs/${jobId}`, {
         method: "POST"
       });
       if (!res.ok) {
@@ -306,7 +307,7 @@ export default function DashboardPage() {
 
       // 2. Queue the Task
       // 2. Call Backend API to Queue Task & Trigger Agent
-      const response = await fetch(`${API_BASE_URL}/opportunities/discover`, {
+      const response = await fetch(`${BACKEND_URL}/opportunities/discover`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
