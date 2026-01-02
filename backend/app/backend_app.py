@@ -453,13 +453,8 @@ def discover_opportunities(
       ch.setFormatter(formatter)
       logger.addHandler(ch)
 
-  # Log incoming request (masking sensitive data if any)
-  logger.info("discover request received: %s", {
-      "skills": payload.skills, 
-      "preferred_locations": payload.preferred_locations,
-      "location": payload.location,
-      "limit": payload.limit
-  })
+  # 1. Log Request
+  print("🚀 Deep Scan requested")
 
   # Helper to normalize locations
   def normalize_locations(loc_list: List[str]) -> List[str]:
@@ -490,43 +485,13 @@ def discover_opportunities(
       locations = req_locs
       resolved_locations_source = "request"
   else:
-      # b) DB (Job Preferences)
-      # Try to find user if user_id is provided or inferred (here we assume user_id might be passed or we check a default user for demo)
-      # For this prototype, let's assume we check the first user or a specific user if we had auth. 
-      # Since the signature doesn't enforce auth yet, we'll try to look up preferences if we had a user_id.
-      # But wait, the current endpoint doesn't take user_id. 
-      # The prompt says "fallback to a safe default (use user.profile_city if available...)".
-      # This implies we should have access to the user.
-      # I will add user_id to the query params or body if needed, but for now I'll stick to the payload.
-      # Actually, the previous code didn't use user_id.
-      # I'll check if I can get a user. 
-      # Let's assume for now we don't have a user context unless passed.
-      # BUT, step 2b says "if the DB has job_preferences for the user".
-      # I will try to fetch a default user or just skip if no user_id.
-      # Let's assume we can't easily get DB prefs without user_id.
-      # However, I'll implement the logic: IF we had a user, we'd do it.
-      # Since I can't change the API signature to require auth without breaking frontend potentially,
-      # I will check if there's a way to get a user.
-      # The prompt implies I should do it.
-      # I'll add a TODO or try to fetch a default user if exists.
-      # Actually, let's look at `create_user_application` it takes `user_id`.
-      # `discover_opportunities` didn't take `user_id`.
-      # I will stick to "request" and "default" for now if I can't find a user, 
-      # OR I will try to fetch the first user in DB as a fallback for this prototype.
-      
-      # Let's try to fetch the first user's preferences as a "demo" fallback if no user_id
-      # This is a bit hacky but fits the "prototype" nature if auth isn't strict.
-      # Better: just check if we can find *any* preferences? No, that's bad.
-      
-      # Wait, the prompt says "use user.profile_city if available".
-      # I will assume for this task that if I can't find a user, I skip DB.
       pass
 
   if not locations:
       # c) Default
       locations = ["Unknown"] # Or a safe default like "Remote" or "Bangalore"
       resolved_locations_source = "default"
-      logger.warning("discover: resolved locations empty - using default fallback")
+      # logger.warning("discover: resolved locations empty - using default fallback")
 
   # 2. Build Query
   # Prioritize Roles (Designations) if provided
@@ -546,7 +511,7 @@ def discover_opportunities(
   if not task_query.strip():
       raise HTTPException(status_code=400, detail="Query cannot be empty. Please provide skills or location.")
 
-  logger.info("enqueueing search task", {"query": task_query, "loc_source": resolved_locations_source})
+  # logger.info("enqueueing search task", {"query": task_query, "loc_source": resolved_locations_source})
 
   # 4. Create Queue Item
   queue_item = SearchQueue(
@@ -564,7 +529,10 @@ def discover_opportunities(
   db.commit()
   db.refresh(queue_item)
   
+  print("📦 Queue item created")
+  
   # 5. Trigger GitHub Action (Instant Deep Scan)
+  print("⚡ Triggering GitHub Actions workflow")
   try:
       import requests
       import os
@@ -574,26 +542,24 @@ def discover_opportunities(
       git_repo = os.environ.get("GITHUB_REPO_NAME")
       git_workflow = os.environ.get("GITHUB_WORKFLOW_FILE", "job_agent.yml")
       
-      if git_token and git_owner and git_repo:
-          url = f"https://api.github.com/repos/{git_owner}/{git_repo}/actions/workflows/{git_workflow}/dispatches"
-          headers = {
-              "Authorization": f"Bearer {git_token}",
-              "Accept": "application/vnd.github+json",
-              "X-GitHub-Api-Version": "2022-11-28"
-          }
-          payload = {"ref": "main"}
-          
-          resp = requests.post(url, json=payload, headers=headers, timeout=5)
-          
-          if resp.status_code in [200, 204]:
-              logger.info("GitHub Action triggered successfully")
-          else:
-              logger.error(f"Failed to trigger GitHub Action: {resp.status_code} - {resp.text}")
+      # UNCONDITIONAL TRIGGER ATTEMPT
+      url = f"https://api.github.com/repos/{git_owner}/{git_repo}/actions/workflows/{git_workflow}/dispatches"
+      headers = {
+          "Authorization": f"Bearer {git_token}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+      }
+      payload_data = {"ref": "main"}
+      
+      resp = requests.post(url, json=payload_data, headers=headers, timeout=5)
+      
+      if resp.status_code in [200, 204]:
+          print("✅ GitHub Actions dispatch sent")
       else:
-          logger.warning("Skipping GitHub Action trigger: Missing env vars")
-          
+          print(f"❌ GitHub trigger failed: {resp.status_code} - {resp.text}")
+
   except Exception as e:
-      logger.error(f"Error triggering GitHub Action: {str(e)}")
+      print(f"❌ GitHub trigger failed: {str(e)}")
   
   return queue_item
 

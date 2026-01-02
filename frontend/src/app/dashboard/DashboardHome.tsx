@@ -305,20 +305,25 @@ export default function DashboardPage() {
 
 
       // 2. Queue the Task
-      const { data: task, error } = await supabase
-        .from('search_queue')
-        .insert({
-          user_id: user.id,
-          query: searchQuery,
-          status: 'PENDING',
-          filters: filters,
-          resolved_locations_source: 'request',
-          task_type: 'SEARCH'
-        })
-        .select()
-        .single();
+      // 2. Call Backend API to Queue Task & Trigger Agent
+      const response = await fetch(`${API_BASE_URL}/opportunities/discover`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          skills: prefs?.priority_skills || ["Software Engineer"], // Fallback if no skills
+          preferred_locations: prefs?.preferred_locations || [],
+          location: location,
+          limit: 20
+        }),
+      });
 
-      if (error || !task) throw error || new Error("Task creation failed");
+      if (!response.ok) {
+        throw new Error(`Backend Error: ${response.status}`);
+      }
+
+      const task = await response.json();
 
       // 3. Poll for Completion
       const taskId = task.id;
