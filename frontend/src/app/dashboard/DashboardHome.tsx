@@ -307,16 +307,25 @@ export default function DashboardPage() {
 
       // 2. Queue the Task
       // 2. Call Backend API to Queue Task & Trigger Agent
-      const response = await fetch(`${BACKEND_URL}/opportunities/discover`, {
+      // Schema: DiscoverRequest needs skills/locations. user_id is a query param in backend.
+      // User requested body: { user_id, scan_type: "deep" }
+      // We merge requirements: Send valid DiscoverRequest body + requested fields + user_id in query just in case.
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "https://karyasync.onrender.com";
+
+      const response = await fetch(`${backendUrl}/opportunities/discover?user_id=${user.id}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          skills: prefs?.priority_skills || ["Software Engineer"], // Fallback if no skills
+          // Required by Backend Schema (DiscoverRequest)
+          skills: prefs?.priority_skills || ["Software Engineer"],
           preferred_locations: prefs?.preferred_locations || [],
           location: location,
-          limit: 20
+          limit: 20,
+          // Requested by User (Extra context, helpful if backend schema evolves)
+          user_id: user.id,
+          scan_type: "deep"
         }),
       });
 
