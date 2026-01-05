@@ -252,6 +252,10 @@ export default function DashboardPage() {
     await triggerDiscovery('FAST');
   };
 
+  /* 
+   * STRICT DEEP SCAN HANDLER 
+   * follows production reliability requirements 
+   */
   const triggerDiscovery = async (mode: 'FAST' | 'DEEP' = 'FAST') => {
     setScanning(true);
     setScanMessage(mode === 'DEEP' ? "Initializing Deep Scan..." : "Syncing latest preferences...");
@@ -262,74 +266,53 @@ export default function DashboardPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
+        console.error("Deep Scan: No user found.");
         setScanning(false);
         return;
       }
 
-      // 1. Fetch Latest Preferences
-      const { data: prefs, error: prefError } = await supabase
+      // 1. Fetch Preferences (Non-blocking fallback)
+      const { data: prefs } = await supabase
         .from('job_preferences')
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
 
-      if (prefError) console.warn("Error fetching prefs:", prefError);
+      let location = prefs?.preferred_locations?.[0] || "India";
 
-      let searchQuery = "Software Engineer";
-      let location = "India";
-      // Enable Auto-Deep Fallback by default to ensure results
-      let filters: any = { scan_mode: mode, auto_deep_fallback: true };
+      // 2. Call Backend API (CRITICAL STEP)
+      // Must use absolute URL.
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "https://karyasync.onrender.com";
+      console.log(`🚀 Triggering Deep Scan to: ${API_BASE}/opportunities/discover`);
 
-      if (prefs) {
-        const roles = prefs.desired_roles || [];
-        if (roles.length > 0) {
-          searchQuery = roles.join(" OR ");
-        }
-
-        location = prefs.preferred_locations?.[0] || "India";
-
-        // Check if ANY role implies internship
-        if (searchQuery.toLowerCase().includes("intern")) filters.is_internship = true;
-
-        if (location.toLowerCase().includes("remote")) filters.is_remote = true;
-        else filters.location = location;
-
-        if (prefs.experience_years) {
-          filters.experience_years = prefs.experience_years;
-        }
-      }
-
-      // UX Feedback
-      // alert(`Hunting for: ${searchQuery}\nLocation: ${location}`);
-
-      // 2. Call Backend API to Queue Task & Trigger Agent
-      const backendUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "https://karyasync.onrender.com";
-
-      const response = await fetch(`${backendUrl}/opportunities/discover?user_id=${user.id}`, {
+      const response = await fetch(`${API_BASE}/opportunities/discover?user_id=${user.id}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          // Required by Backend Schema (DiscoverRequest)
+          // Schema Requirements
           skills: prefs?.priority_skills || ["Software Engineer"],
           preferred_locations: prefs?.preferred_locations || [],
           location: location,
           limit: 20,
-          // Requested by User (Extra context, helpful if backend schema evolves)
+          // User Context
           user_id: user.id,
-          scan_type: "deep"
+          scan_type: "deep",
+          scan_mode: mode
         }),
         signal: controller.signal
       });
 
       if (!response.ok) {
-        throw new Error(`Backend Error: ${response.status}`);
+        const errText = await response.text();
+        throw new Error(`Backend Error ${response.status}: ${errText}`);
       }
 
+      console.log("✅ Deep Scan Triggered Successfully");
       const task = await response.json();
 
-      // 3. Poll for Completion
+      // 3. Poll for Completion ONLY after success
       const taskId = task.id;
       setScanMessage("Agent hunting for jobs...");
 
@@ -350,23 +333,23 @@ export default function DashboardPage() {
         if (currentTask.status === 'COMPLETED') {
           clearInterval(pollInterval);
           setScanMessage("Fresh Jobs Found! Updating...");
-          setScanMessage("Fresh Jobs Found! Updating...");
           await fetchJobs(1, true); // 4. Fetch the new jobs
           setTimeout(() => setScanning(false), 1500);
         }
       }, 2000);
 
     } catch (err: any) {
-      console.error("Scan failed:", err);
+      console.error("🔥 Scan failed:", err);
       if (err.name === 'AbortError') {
         alert("Deep Scan Request Timed Out. Please try again.");
       } else {
         alert("Deep Scan Failed: " + (err.message || "Unknown error"));
       }
+      // Only disable scanning if we acted (polling handles its own disable)
+      // But here we are in the main flow catch
       setScanning(false);
     } finally {
       clearTimeout(timeoutId);
-      // setScanning(false); // Can't put here unconditionally because of async polling
     }
   };
 
