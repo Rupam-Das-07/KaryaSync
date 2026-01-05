@@ -742,12 +742,13 @@ async def analyze_ats_upload(
   )
 
 
+
 # ========================
 # AGENT DEEP SCAN TRIGGER
 # ========================
 def trigger_github_action(logger=None):
-  """Background task to trigger GitHub Actions"""
-  print("⚡ Triggering GitHub Actions workflow (Async)")
+  """Synchronous GitHub Actions Trigger"""
+  print("⚡ Triggering GitHub Actions workflow (Synchronous)")
   try:
       import os
       git_token = os.environ.get("GITHUB_ACTIONS_TOKEN")
@@ -755,7 +756,10 @@ def trigger_github_action(logger=None):
       git_repo = os.environ.get("GITHUB_REPO_NAME")
       git_workflow = os.environ.get("GITHUB_WORKFLOW_FILE", "job_agent.yml")
       
-      # UNCONDITIONAL TRIGGER ATTEMPT
+      if not all([git_token, git_owner, git_repo]):
+          print("❌ Missing GitHub credentials")
+          return False, "Missing GitHub credentials"
+
       url = f"https://api.github.com/repos/{git_owner}/{git_repo}/actions/workflows/{git_workflow}/dispatches"
       headers = {
           "Authorization": f"Bearer {git_token}",
@@ -764,21 +768,23 @@ def trigger_github_action(logger=None):
       }
       payload_data = {"ref": "main"}
       
-      resp = requests.post(url, json=payload_data, headers=headers, timeout=10)
+      resp = requests.post(url, json=payload_data, headers=headers, timeout=5)
       
-      if resp.status_code in [200, 204]:
+      if resp.status_code == 204:
           print("✅ GitHub Actions dispatch sent successfully")
+          return True, "Dispatch sent"
       else:
           print(f"❌ GitHub trigger failed: {resp.status_code} - {resp.text}")
+          return False, f"GitHub Error {resp.status_code}: {resp.text}"
 
   except Exception as e:
       print(f"❌ GitHub trigger failed with exception: {str(e)}")
+      return False, str(e)
 
 
 @app.post("/opportunities/discover", response_model=schemas.SearchQueueResponse)
 def discover_opportunities(
   payload: schemas.DiscoverRequest,
-  background_tasks: BackgroundTasks,
   user_id: Optional[str] = None, # Optional for now, or extract from auth if available
   db: Session = Depends(get_db)
 ):
@@ -865,7 +871,15 @@ def discover_opportunities(
   
   print("📦 Queue item created")
   
-  # 5. Trigger GitHub Action (Background Task)
-  background_tasks.add_task(trigger_github_action, logger)
+  # 5. Trigger GitHub Action (Synchronous & Strict)
+  success, msg = trigger_github_action(logger)
   
+  if not success:
+      # If trigger fails, we MUST return 500 as per reliability requirements
+      # We optionally delete the queue item since the agent won't pick it up (unless another runner exists)
+      db.delete(queue_item)
+      db.commit()
+      raise HTTPException(status_code=500, detail=f"Failed to trigger agent: {msg}")
+
   return queue_item
+

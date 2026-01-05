@@ -303,7 +303,7 @@ export default function DashboardPage() {
       // alert(`Hunting for: ${searchQuery}\nLocation: ${location}`);
 
       // 2. Call Backend API to Queue Task & Trigger Agent
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "https://karyasync.onrender.com";
+      const backendUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "https://karyasync.onrender.com";
 
       const response = await fetch(`${backendUrl}/opportunities/discover?user_id=${user.id}`, {
         method: 'POST',
