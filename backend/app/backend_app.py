@@ -10,131 +10,11 @@ import requests # Top-level import
 
 # ... (imports)
 
-def trigger_github_action(logger):
-  """Background task to trigger GitHub Actions"""
-  print("⚡ Triggering GitHub Actions workflow (Async)")
-  try:
-      import os
-      git_token = os.environ.get("GITHUB_ACTIONS_TOKEN")
-      git_owner = os.environ.get("GITHUB_REPO_OWNER")
-      git_repo = os.environ.get("GITHUB_REPO_NAME")
-      git_workflow = os.environ.get("GITHUB_WORKFLOW_FILE", "job_agent.yml")
-      
-      # UNCONDITIONAL TRIGGER ATTEMPT
-      url = f"https://api.github.com/repos/{git_owner}/{git_repo}/actions/workflows/{git_workflow}/dispatches"
-      headers = {
-          "Authorization": f"Bearer {git_token}",
-          "Accept": "application/vnd.github+json",
-          "X-GitHub-Api-Version": "2022-11-28"
-      }
-      payload_data = {"ref": "main"}
-      
-      resp = requests.post(url, json=payload_data, headers=headers, timeout=10)
-      
-      if resp.status_code in [200, 204]:
-          print("✅ GitHub Actions dispatch sent successfully")
-      else:
-          print(f"❌ GitHub trigger failed: {resp.status_code} - {resp.text}")
 
-  except Exception as e:
-      print(f"❌ GitHub trigger failed with exception: {str(e)}")
+# ... (imports)
 
 
-@app.post("/opportunities/discover", response_model=schemas.SearchQueueResponse)
-def discover_opportunities(
-  payload: schemas.DiscoverRequest,
-  background_tasks: BackgroundTasks,
-  user_id: Optional[str] = None, # Optional for now, or extract from auth if available
-  db: Session = Depends(get_db)
-):
-  import logging
-  from app.models.queue import SearchQueue
-  
-  # Setup logger
-  logger = logging.getLogger("app.discover")
-  logger.setLevel(logging.INFO)
-  
-  # 1. Log Request
-  print("🚀 Deep Scan requested")
 
-  # ... (Validation & Query Building Logic remains same) ...
-  
-  # Helper to normalize locations
-  def normalize_locations(loc_list: List[str]) -> List[str]:
-      out = []
-      for l in loc_list or []:
-          if not l: continue
-          s = l.strip()
-          if not s: continue
-          s = s.title()
-          if s not in out:
-              out.append(s)
-      return out
-
-  # 1. Resolve Locations
-  locations = []
-  resolved_locations_source = "default"
-
-  # a) Request
-  req_locs = []
-  if payload.preferred_locations:
-      req_locs.extend(payload.preferred_locations)
-  if payload.location:
-      req_locs.append(payload.location)
-  
-  req_locs = normalize_locations(req_locs)
-  
-  if req_locs:
-      locations = req_locs
-      resolved_locations_source = "request"
-  else:
-      pass
-
-  if not locations:
-      # c) Default
-      locations = ["Unknown"] 
-      resolved_locations_source = "default"
-
-  # 2. Build Query
-  # Prioritize Roles (Designations) if provided
-  if payload.roles and len(payload.roles) > 0:
-      base_query = " OR ".join(payload.roles)
-      query_parts = [base_query]
-  else:
-      # Fallback to skills
-      query_parts = payload.skills[:3]
-      
-  if locations and locations[0] != "Unknown":
-      query_parts.append(locations[0])
-  
-  task_query = " ".join(query_parts)
-  
-  # 3. Validation
-  if not task_query.strip():
-      raise HTTPException(status_code=400, detail="Query cannot be empty. Please provide skills or location.")
-
-  # 4. Create Queue Item
-  queue_item = SearchQueue(
-      query=task_query,
-      resolved_locations_source=resolved_locations_source,
-      filters={
-          "location": payload.location, 
-          "resolved_locations": locations, 
-          "salary_min": payload.salary_min,
-          "limit": payload.limit,
-          "skills": payload.skills
-      }
-  )
-  db.add(queue_item)
-  db.commit()
-  db.refresh(queue_item)
-  
-  print("📦 Queue item created")
-  
-  # 5. Trigger GitHub Action (Background Task)
-  background_tasks.add_task(trigger_github_action, logger)
-  
-  return queue_item
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -861,3 +741,131 @@ async def analyze_ats_upload(
     missing_keywords=result.get("missing_keywords", [])
   )
 
+
+# ========================
+# AGENT DEEP SCAN TRIGGER
+# ========================
+def trigger_github_action(logger=None):
+  """Background task to trigger GitHub Actions"""
+  print("⚡ Triggering GitHub Actions workflow (Async)")
+  try:
+      import os
+      git_token = os.environ.get("GITHUB_ACTIONS_TOKEN")
+      git_owner = os.environ.get("GITHUB_REPO_OWNER")
+      git_repo = os.environ.get("GITHUB_REPO_NAME")
+      git_workflow = os.environ.get("GITHUB_WORKFLOW_FILE", "job_agent.yml")
+      
+      # UNCONDITIONAL TRIGGER ATTEMPT
+      url = f"https://api.github.com/repos/{git_owner}/{git_repo}/actions/workflows/{git_workflow}/dispatches"
+      headers = {
+          "Authorization": f"Bearer {git_token}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+      }
+      payload_data = {"ref": "main"}
+      
+      resp = requests.post(url, json=payload_data, headers=headers, timeout=10)
+      
+      if resp.status_code in [200, 204]:
+          print("✅ GitHub Actions dispatch sent successfully")
+      else:
+          print(f"❌ GitHub trigger failed: {resp.status_code} - {resp.text}")
+
+  except Exception as e:
+      print(f"❌ GitHub trigger failed with exception: {str(e)}")
+
+
+@app.post("/opportunities/discover", response_model=schemas.SearchQueueResponse)
+def discover_opportunities(
+  payload: schemas.DiscoverRequest,
+  background_tasks: BackgroundTasks,
+  user_id: Optional[str] = None, # Optional for now, or extract from auth if available
+  db: Session = Depends(get_db)
+):
+  import logging
+  from app.models.queue import SearchQueue
+  
+  # Setup logger
+  logger = logging.getLogger("app.discover")
+  logger.setLevel(logging.INFO)
+  
+  # 1. Log Request
+  print("🚀 Deep Scan requested")
+
+  # Helper to normalize locations
+  def normalize_locations(loc_list: List[str]) -> List[str]:
+      out = []
+      for l in loc_list or []:
+          if not l: continue
+          s = l.strip()
+          if not s: continue
+          pass
+          s = s.title()
+          if s not in out:
+              out.append(s)
+      return out
+
+  # 1. Resolve Locations
+  locations = []
+  resolved_locations_source = "default"
+
+  # a) Request
+  req_locs = []
+  if payload.preferred_locations:
+      req_locs.extend(payload.preferred_locations)
+  if payload.location:
+      req_locs.append(payload.location)
+  
+  req_locs = normalize_locations(req_locs)
+  
+  if req_locs:
+      locations = req_locs
+      resolved_locations_source = "request"
+  else:
+      pass
+
+  if not locations:
+      # c) Default
+      locations = ["Unknown"] 
+      resolved_locations_source = "default"
+
+  # 2. Build Query
+  # Prioritize Roles (Designations) if provided
+  if payload.roles and len(payload.roles) > 0:
+      base_query = " OR ".join(payload.roles)
+      query_parts = [base_query]
+  else:
+      # Fallback to skills
+      query_parts = payload.skills[:3]
+      
+  if locations and locations[0] != "Unknown":
+      query_parts.append(locations[0])
+  
+  task_query = " ".join(query_parts)
+  
+  # 3. Validation
+  if not task_query.strip():
+      raise HTTPException(status_code=400, detail="Query cannot be empty. Please provide skills or location.")
+
+  # 4. Create Queue Item
+  queue_item = SearchQueue(
+      query=task_query,
+      resolved_locations_source=resolved_locations_source,
+      filters={
+          "location": payload.location, 
+          "resolved_locations": locations, 
+          "salary_min": payload.salary_min,
+          "limit": payload.limit,
+          "skills": payload.skills
+      }
+  )
+  db.add(queue_item)
+  db.commit()
+  db.refresh(queue_item)
+  
+  print("📦 Queue item created")
+  
+  # 5. Trigger GitHub Action (Background Task)
+  background_tasks.add_task(trigger_github_action, logger)
+  
+  return queue_item
