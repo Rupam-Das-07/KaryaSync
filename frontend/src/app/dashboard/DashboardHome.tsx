@@ -256,18 +256,22 @@ export default function DashboardPage() {
     setScanning(true);
     setScanMessage(mode === 'DEEP' ? "Initializing Deep Scan..." : "Syncing latest preferences...");
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s Timeout
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        setScanning(false);
+        return;
+      }
 
       // 1. Fetch Latest Preferences
-      // Note: User requested 'profiles.job_titles', but schema is 'job_preferences.desired_roles'.
-      // Fetching fresh data to ensure we catch any new profile updates.
       const { data: prefs, error: prefError } = await supabase
         .from('job_preferences')
         .select('*')
         .eq('user_id', user.id)
-        .maybeSingle(); // Use maybeSingle to avoid 406 if row missing
+        .maybeSingle();
 
       if (prefError) console.warn("Error fetching prefs:", prefError);
 
@@ -277,13 +281,9 @@ export default function DashboardPage() {
       let filters: any = { scan_mode: mode, auto_deep_fallback: true };
 
       if (prefs) {
-        // Multi-Title Support: Join all roles with " OR "
         const roles = prefs.desired_roles || [];
-
         if (roles.length > 0) {
           searchQuery = roles.join(" OR ");
-        } else {
-
         }
 
         location = prefs.preferred_locations?.[0] || "India";
@@ -294,22 +294,15 @@ export default function DashboardPage() {
         if (location.toLowerCase().includes("remote")) filters.is_remote = true;
         else filters.location = location;
 
-        // Pass experience level to avoid "Bouncer" filtering out senior roles
         if (prefs.experience_years) {
           filters.experience_years = prefs.experience_years;
         }
       }
 
       // UX Feedback
-      alert(`Hunting for: ${searchQuery}\nLocation: ${location}`);
+      // alert(`Hunting for: ${searchQuery}\nLocation: ${location}`);
 
-
-
-      // 2. Queue the Task
       // 2. Call Backend API to Queue Task & Trigger Agent
-      // Schema: DiscoverRequest needs skills/locations. user_id is a query param in backend.
-      // User requested body: { user_id, scan_type: "deep" }
-      // We merge requirements: Send valid DiscoverRequest body + requested fields + user_id in query just in case.
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "https://karyasync.onrender.com";
 
       const response = await fetch(`${backendUrl}/opportunities/discover?user_id=${user.id}`, {
@@ -327,6 +320,7 @@ export default function DashboardPage() {
           user_id: user.id,
           scan_type: "deep"
         }),
+        signal: controller.signal
       });
 
       if (!response.ok) {
@@ -364,7 +358,15 @@ export default function DashboardPage() {
 
     } catch (err: any) {
       console.error("Scan failed:", err);
+      if (err.name === 'AbortError') {
+        alert("Deep Scan Request Timed Out. Please try again.");
+      } else {
+        alert("Deep Scan Failed: " + (err.message || "Unknown error"));
+      }
       setScanning(false);
+    } finally {
+      clearTimeout(timeoutId);
+      // setScanning(false); // Can't put here unconditionally because of async polling
     }
   };
 
