@@ -1,0 +1,65 @@
+# ========================
+# Environment Variables
+# ========================
+.env
+.env.local
+.env.development
+.env.production
+.env*.local
+*.env
+
+# ========================
+# Dependencies
+# ========================
+node_modules/
+venv/
+.venv/
+env/
+
+# ========================
+# Build / Output
+# ========================
+frontend/.next/
+frontend/out/
+frontend/build/
+backend/__pycache__/
+local_agent/__pycache__/
+*.pyc
+*.pyo
+dist/
+
+# ========================
+# IDE / Editor
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ========================
+# Logs / Debug
+# ========================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ========================
+# OS Files
+# ========================
+.DS_Store
+desktop.ini
+
+# ========================
+# Misc
+# ========================
+*.egg-info/
+.eggs/
+*.egg
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
