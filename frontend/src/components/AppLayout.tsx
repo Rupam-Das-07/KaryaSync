@@ -16,7 +16,6 @@ import {
   LogOut,
   Briefcase,
   User,
-  FileSignature
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import ThemeToggleBlur from "./ThemeToggleBlur";
@@ -118,7 +117,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
     { name: "Check ATS Score", href: "/ats", icon: Briefcase },
     { name: "Saved Jobs", href: "/saved", icon: Bookmark },
-    { name: "Tailor CV", href: "/dashboard/cv-tailor", icon: FileSignature },
   ];
 
   return (
