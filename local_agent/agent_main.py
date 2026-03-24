@@ -1,4 +1,5 @@
 import time
+import signal
 import os
 import sys
 import requests
@@ -701,42 +702,34 @@ def handle_ats_task(task, db):
     db.commit()
 
 # =============================================================================
-# MAIN ORCHESTRATOR
+# MAIN ORCHESTRATOR — Continuous Worker Mode
 # =============================================================================
 
+# Graceful shutdown flag
+_shutdown_requested = False
 
-# =============================================================================
-# MAIN ORCHESTRATOR
-# =============================================================================
+def _signal_handler(signum, frame):
+    """Handle SIGINT/SIGTERM for graceful shutdown."""
+    global _shutdown_requested
+    _shutdown_requested = True
+    print("\n🛑 Shutdown signal received. Finishing current work...")
 
-LAST_RUN_FILE = "agent_last_run.txt"
-
-def check_deep_scan_guard():
-    """Checks if a deep scan ran in the last 6 hours."""
-    if os.path.exists(LAST_RUN_FILE):
-        try:
-            with open(LAST_RUN_FILE, "r") as f:
-                last_ts = float(f.read().strip())
-            
-            hours_diff = (time.time() - last_ts) / 3600
-            if hours_diff < 6:
-                print(f"⏱️ Safety Guard: Last run was {hours_diff:.2f} hours ago (< 6h).")
-                return False
-        except Exception:
-            pass # File corrupt or unreadable, ignore
-    return True
-
-def update_deep_scan_guard():
-    """Updates the last run timestamp."""
-    try:
-        with open(LAST_RUN_FILE, "w") as f:
-            f.write(str(time.time()))
-    except Exception as e:
-        print(f"⚠️ Failed to update lock file: {e}")
+# Poll / sleep intervals (seconds)
+IDLE_SLEEP = 10   # Sleep when no tasks found
+BATCH_SLEEP = 5   # Sleep between task batches
+ERROR_SLEEP = 15  # Sleep after unexpected errors
 
 def main():
-    print("🚀 Agent Starting... (Single Execution Mode)")
-    
+    global _shutdown_requested
+
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+
+    print("🚀 Agent Starting... (Continuous Worker Mode)")
+    print(f"   ⏱️  Polling every {IDLE_SLEEP}s | Batch gap {BATCH_SLEEP}s")
+
+    # Establish persistent DB session
     try:
         db = SessionLocal()
         print("✅ Database Connected")
@@ -744,70 +737,76 @@ def main():
         print(f"❌ Fatal Error: DB Connection Failed: {e}")
         sys.exit(1)
 
+    # ── Worker Loop ──────────────────────────────────────────────────────
     try:
-        # Fetch all pending tasks
-        stmt = select(SearchQueue).where(SearchQueue.status == SearchStatus.PENDING)
-        tasks = db.execute(stmt).scalars().all()
-
-        if not tasks:
-            print("📭 No pending tasks found in queue.")
-        else:
-            print(f"📋 Found {len(tasks)} pending tasks.")
-
-        for task in tasks:
-            print(f"⚡ Picking up Task ID: {task.id} [{task.status}]")
-            
+        while not _shutdown_requested:
             try:
-                task.status = SearchStatus.PROCESSING
-                db.commit()
+                print("⏳ Checking for pending tasks...")
 
-                filters = task.filters or {}
-                scan_mode = filters.get("scan_mode", "FAST")
-                task_type = getattr(task, 'task_type', 'SEARCH')
+                # Fetch all pending tasks
+                stmt = select(SearchQueue).where(SearchQueue.status == SearchStatus.PENDING)
+                tasks = db.execute(stmt).scalars().all()
 
-                # DEEP SCAN SAFETY GUARD
-                if task_type == 'SEARCH' and scan_mode == "DEEP":
-                    if not check_deep_scan_guard():
-                        print("🛑 Skipping run: agent executed recently")
-                        task.status = SearchStatus.PENDING # Revert to pending? Or Failed? User said "exit gracefully".
-                        # If we exit, the task remains PROCESSING if we don't fix it.
-                        # But we already set it to PROCESSING.
-                        # Ideally, we should set it back to PENDING or SKIPPED.
-                        # Since user wants to "exit", let's revert and exit.
-                        task.status = SearchStatus.PENDING
+                if not tasks:
+                    print("📭 No tasks found, waiting...")
+                    time.sleep(IDLE_SLEEP)
+                    continue
+
+                print(f"📋 Found {len(tasks)} pending task(s).")
+
+                for task in tasks:
+                    if _shutdown_requested:
+                        print("🛑 Shutdown requested, stopping task processing.")
+                        break
+
+                    print(f"⚡ Processing Task ID: {task.id}")
+
+                    try:
+                        task.status = SearchStatus.PROCESSING
                         db.commit()
-                        sys.exit(0)
-                
-                # EXECUTE
-                if task_type == 'ATS':
-                    handle_ats_task(task, db)
-                else:
-                    handle_search_task(task, db)
-                    if scan_mode == "DEEP":
-                        update_deep_scan_guard()
 
-                task.status = SearchStatus.COMPLETED
-                db.commit()
-                print(f"✅ Task {task.id} Completed.")
+                        filters = task.filters or {}
+                        task_type = getattr(task, 'task_type', 'SEARCH')
+
+                        # Execute
+                        if task_type == 'ATS':
+                            handle_ats_task(task, db)
+                        else:
+                            handle_search_task(task, db)
+
+                        task.status = SearchStatus.COMPLETED
+                        db.commit()
+                        print(f"✅ Task {task.id} completed.")
+
+                    except Exception as e:
+                        print(f"❌ Task {task.id} failed: {e}")
+                        task.status = SearchStatus.FAILED
+                        try:
+                            db.commit()
+                        except Exception:
+                            db.rollback()
+
+                # Brief pause between batches to avoid tight looping
+                if not _shutdown_requested:
+                    time.sleep(BATCH_SLEEP)
 
             except Exception as e:
-                print(f"❌ Task {task.id} Failed: {e}")
-                task.status = SearchStatus.FAILED
-                try: db.commit()
-                except: db.rollback()
-                # We do not exit on individual task failure, try next
-        
-    except Exception as e:
-        print(f"❌ Unexpected Error: {e}")
-        db.rollback()
-        sys.exit(1)
+                print(f"❌ Unexpected error in worker loop: {e}")
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                print(f"⏳ Retrying in {ERROR_SLEEP}s...")
+                time.sleep(ERROR_SLEEP)
+
     finally:
         try:
             db.close()
             print("🔌 DB Connection Closed.")
-        except: pass
-        
-    print("🏁 Agent Execution Finished.")
+        except Exception:
+            pass
+
+    print("🏁 Agent shut down gracefully.")
 
 if __name__ == "__main__":
     main()

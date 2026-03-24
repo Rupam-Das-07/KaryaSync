@@ -13,7 +13,8 @@ import {
   List,
   MapPin,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  FileSignature
 } from "lucide-react";
 import { checkOnboardingStatus } from "@/utils/onboarding";
 import ScanLoader from "@/components/ScanLoader";
@@ -70,9 +71,18 @@ export default function DashboardPage() {
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [activeTab, setActiveTab] = useState<'INTERNSHIP' | 'FULL_TIME'>('FULL_TIME');
   const [isBackendDown, setIsBackendDown] = useState(false);
+  const [autoDiscoverCooldown, setAutoDiscoverCooldown] = useState(0);
+  const [actionMessage, setActionMessage] = useState<{ text: string, type: 'info' | 'warning' } | null>(null);
 
   const router = useRouter();
   const supabase = createClient();
+
+  useEffect(() => {
+    if (autoDiscoverCooldown > 0) {
+      const timer = setTimeout(() => setAutoDiscoverCooldown(c => c - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [autoDiscoverCooldown]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -246,19 +256,41 @@ export default function DashboardPage() {
     4. Auto-update list on completion.
   */
   const handleRefresh = async () => {
-    // Re-fetch jobs first (just in case)
-    await fetchJobs(1, true);
-    // Trigger a fresh fast scan
-    await triggerDiscovery('FAST');
+    await handleAutoDiscover();
+  };
+
+  const handleAutoDiscover = async () => {
+    if (autoDiscoverCooldown > 0) {
+      setActionMessage({ text: `⚠️ Auto Discover is temporarily limited to prevent API overuse. Please try again in ${autoDiscoverCooldown}s.`, type: 'warning' });
+      setTimeout(() => setActionMessage(null), 4000);
+      return;
+    }
+
+    setScanning(true);
+    setScanMessage("Auto-Discovering latest jobs...");
+    setActionMessage(null);
+    try {
+      // Call GET /opportunities instantly without GitHub Actions
+      await fetchJobs(1, false);
+      setAutoDiscoverCooldown(60); // 60s strict rate limit
+      setActionMessage({ text: "✅ Feed updated with instant API sync.", type: 'info' });
+      setTimeout(() => setActionMessage(null), 4000);
+    } catch (error) {
+      console.error("Auto Discover failed:", error);
+      setActionMessage({ text: "⚠️ Auto Discover failed. Please try again.", type: 'warning' });
+    } finally {
+      setTimeout(() => setScanning(false), 1000);
+    }
   };
 
   /* 
    * STRICT DEEP SCAN HANDLER 
    * follows production reliability requirements 
    */
-  const triggerDiscovery = async (mode: 'FAST' | 'DEEP' = 'FAST') => {
+  const triggerDiscovery = async () => {
     setScanning(true);
-    setScanMessage(mode === 'DEEP' ? "Initializing Deep Scan..." : "Syncing latest preferences...");
+    setScanMessage("Initializing Deep Scan...");
+    setActionMessage(null);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s Timeout
@@ -299,7 +331,7 @@ export default function DashboardPage() {
           // User Context
           user_id: user.id,
           scan_type: "deep",
-          scan_mode: mode
+          scan_mode: "DEEP"
         }),
         signal: controller.signal
       });
@@ -334,6 +366,8 @@ export default function DashboardPage() {
           clearInterval(pollInterval);
           setScanMessage("Fresh Jobs Found! Updating...");
           await fetchJobs(1, true); // 4. Fetch the new jobs
+          setActionMessage({ text: "✅ Deep Scan completed successfully. Agent found highly matched opportunities.", type: 'info' });
+          setTimeout(() => setActionMessage(null), 6000);
           setTimeout(() => setScanning(false), 1500);
         }
       }, 2000);
@@ -437,8 +471,9 @@ export default function DashboardPage() {
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">Job Opportunities</h1>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {/* View Toggles */}
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* View Toggles */}
             <div className="flex bg-slate-100 dark:bg-slate-800/50 rounded-lg p-1 border border-slate-200 dark:border-slate-800">
               <button
                 onClick={() => setViewMode('table')}
@@ -459,22 +494,51 @@ export default function DashboardPage() {
 
 
             <button
-              onClick={() => triggerDiscovery('FAST')}
-              disabled={scanning}
-              className="flex items-center gap-2 btn-primary-premium px-5 py-2.5 rounded-full disabled:opacity-70 text-sm"
+              onClick={handleAutoDiscover}
+              disabled={scanning || autoDiscoverCooldown > 0}
+              className={`flex items-center gap-2 btn-primary-premium px-5 py-2.5 rounded-full text-sm transition-all shadow-sm ${autoDiscoverCooldown > 0 ? 'opacity-50 cursor-not-allowed' : 'disabled:opacity-70'}`}
+              title="Fast, real-time API sync"
             >
-              <Sparkles className="h-4 w-4" /> Auto-Discover
+              <Sparkles className="h-4 w-4" /> 
+              {autoDiscoverCooldown > 0 ? `Wait ${autoDiscoverCooldown}s` : "Auto-Discover"}
             </button>
 
             <button
               onClick={() => {
-                if (confirm("Deep Scan takes about 60s. Proceed?")) triggerDiscovery('DEEP');
+                if (confirm("Deep Scan triggers a powerful scraping agent and may take ~60s. Use only when needed. Proceed?")) triggerDiscovery();
               }}
               disabled={scanning}
               className="flex items-center gap-2 bg-amber-600 text-white px-5 py-2.5 rounded-lg hover:bg-amber-700 transition shadow-sm disabled:opacity-70 font-medium text-sm"
+              title="Trigger backend AI scraping agent"
             >
               <Search className="h-4 w-4" /> Deep Scan
             </button>
+
+            <button
+              onClick={() => router.push('/dashboard/cv-tailor')}
+              className="flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-lg hover:bg-emerald-700 transition shadow-sm font-medium text-sm"
+              title="Tailor your CV perfectly to a Job Description"
+            >
+              <FileSignature className="h-4 w-4" /> Tailor CV
+            </button>
+            </div>
+
+            <AnimatePresence>
+              {actionMessage && (
+                <motion.div
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  className={`text-xs px-3 py-1.5 rounded-md font-medium max-w-sm text-right shadow-sm ${
+                    actionMessage.type === 'warning' 
+                      ? 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300 border border-red-200 dark:border-red-800/50' 
+                      : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50'
+                  }`}
+                >
+                  {actionMessage.text}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
 

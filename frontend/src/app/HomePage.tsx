@@ -13,7 +13,8 @@ import {
   List,
   MapPin,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  FileSignature
 } from "lucide-react";
 import { checkOnboardingStatus } from "@/utils/onboarding";
 import ScanLoader from "@/components/ScanLoader";
@@ -374,6 +375,14 @@ export default function HomePage() {
               className="flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-full hover:bg-amber-700 transition shadow-sm disabled:opacity-70 font-semibold text-sm"
             >
               <Search className="h-4 w-4" /> Deep Scan
+            </button>
+
+            <button
+              onClick={() => router.push('/dashboard/cv-tailor')}
+              className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-full hover:bg-emerald-700 transition shadow-sm font-semibold text-sm"
+              title="Tailor your CV perfectly to a Job Description"
+            >
+              <FileSignature className="h-4 w-4" /> Tailor CV
             </button>
           </div>
         </div>

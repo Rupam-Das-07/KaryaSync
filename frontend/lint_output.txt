@@ -1,0 +1,200 @@
+
+> frontend@0.1.0 lint
+> eslint . --ext .ts,.tsx,.js,.jsx
+
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\public\sw.js
+  1:7   warning  'CACHE_NAME' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  3:35  warning  'event' is defined but never used                @typescript-eslint/no-unused-vars
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\app\HomePage.tsx
+   35:21   error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+  104:6    warning  React Hook useEffect has a missing dependency: 'fetchJobs'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  147:51   error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+  206:11   error    'filters' is never reassigned. Use 'const' instead                                                            prefer-const
+  206:20   error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+  258:19   error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+  293:103  error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+  318:55   error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\app\api\ats\scan\route.ts
+  110:53  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  114:44  warning  'pdfData' is defined but never used       @typescript-eslint/no-unused-vars
+  114:53  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\app\ats\AtsScoringPage.tsx
+  34:46  error    Unexpected any. Specify a different type                                                                        @typescript-eslint/no-explicit-any
+  76:6   warning  React Hook useEffect has a missing dependency: 'fetchResume'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\app\dashboard\DashboardHome.tsx
+   40:21   error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+  104:6    warning  React Hook useEffect has a missing dependency: 'fetchJobs'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  109:6    warning  React Hook useEffect has a missing dependency: 'fetchJobs'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  149:13   warning  'offset' is assigned a value but never used                                                                   @typescript-eslint/no-unused-vars
+  208:51   error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+  258:9    warning  'handleRefresh' is assigned a value but never used                                                            @typescript-eslint/no-unused-vars
+  313:11   error    'location' is never reassigned. Use 'const' instead                                                           prefer-const
+  375:19   error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+  396:29   error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+  463:111  error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+  553:53   error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+  643:52   warning  'index' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\app\login\LoginPage.tsx
+  39:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  55:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\app\profile\UserProfilePage.tsx
+   50:36  error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+   51:42  error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+   52:44  error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+   53:50  error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+   54:40  error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+  124:6   warning  React Hook useEffect has a missing dependency: 'fetchData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\app\saved\SavedJobsPage.tsx
+   8:10  warning  'checkOnboardingStatus' is defined but never used  @typescript-eslint/no-unused-vars
+  25:23  error    Unexpected any. Specify a different type           @typescript-eslint/no-explicit-any
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\ATSCheckerModal.tsx
+  16:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\AppLayout.tsx
+  11:3   warning  'Settings' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    @typescript-eslint/no-unused-vars
+  14:3   warning  'Sun' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         @typescript-eslint/no-unused-vars
+  15:3   warning  'Moon' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+  31:10  warning  'mounted' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+  33:11  warning  'theme' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              @typescript-eslint/no-unused-vars
+  33:18  warning  'setTheme' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           @typescript-eslint/no-unused-vars
+  87:27  error    Error: Cannot access variable before it is declared
+
+`getInitials` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\AppLayout.tsx:87:27
+  85 |
+  86 |         if (name) {
+> 87 |           setUserInitials(getInitials(name));
+     |                           ^^^^^^^^^^^ `getInitials` accessed before it is declared
+  88 |         } else if (user.email) {
+  89 |           setUserInitials(getInitials(user.email));
+  90 |         }
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\AppLayout.tsx:96:3
+   94 |   }, []); // <--- Fixed: Empty dependency array ensures this runs only once on mount
+   95 |
+>  96 |   const getInitials = (nameOrEmail: string) => {
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  97 |     if (!nameOrEmail) return "U";
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  98 |     // Check if it's an email
+      …
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 108 |     return parts[0].substring(0, 2).toUpperCase();
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 109 |   };
+      | ^^^^^ `getInitials` is declared here
+  110 |
+  111 |   const handleLogout = async () => {
+  112 |     await supabase.auth.signOut();  react-hooks/immutability
+  94:6   warning  React Hook React.useEffect has a missing dependency: 'supabase.auth'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  react-hooks/exhaustive-deps
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\AutocompleteInput.tsx
+  117:9  warning  The attribute aria-expanded is not supported by the role textbox. This role is implicit on the element input  jsx-a11y/role-supports-aria-props
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\Dashboard.tsx
+    8:3   warning  'Filter' is defined but never used                                                                                                                   @typescript-eslint/no-unused-vars
+   11:3   warning  'Bookmark' is defined but never used                                                                                                                 @typescript-eslint/no-unused-vars
+   17:10  warning  'motion' is defined but never used                                                                                                                   @typescript-eslint/no-unused-vars
+   36:20  error    Unexpected any. Specify a different type                                                                                                             @typescript-eslint/no-explicit-any
+   71:6   warning  React Hook useEffect has missing dependencies: 'loadOpportunities', 'showToast', and 'supabase'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+   82:26  warning  'error' is assigned a value but never used                                                                                                           @typescript-eslint/no-unused-vars
+  117:21  warning  'profile' is assigned a value but never used                                                                                                         @typescript-eslint/no-unused-vars
+  296:19  warning  'id' is defined but never used                                                                                                                       @typescript-eslint/no-unused-vars
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\EntryPreloader.tsx
+  21:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\EntryPreloader.tsx:21:7
+  19 |     const seen = localStorage.getItem("hasSeenPreloader");
+  20 |     if (!seen) {
+> 21 |       setHasSeen(false);
+     |       ^^^^^^^^^^ Avoid calling setState() directly within an effect
+  22 |       document.body.style.overflow = "hidden";
+  23 |     }
+  24 |   }, []);  react-hooks/set-state-in-effect
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\JobCard.tsx
+   3:40  warning  'ExternalLink' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             @typescript-eslint/no-unused-vars
+   3:61  warning  'CheckCircle2' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             @typescript-eslint/no-unused-vars
+   6:8   error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             @typescript-eslint/no-explicit-any
+  11:53  error    Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\JobCard.tsx:11:53
+   9 |
+  10 | export default function JobCard({ job, onClick }: JobCardProps) {
+> 11 |   const isNew = new Date(job.created_at) > new Date(Date.now() - 86400000 * 2); // New if < 2 days
+     |                                                     ^^^^^^^^^^ Cannot call impure function
+  12 |
+  13 |   return (
+  14 |     <motion.div  react-hooks/purity
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\JobDetailModal.tsx
+  3:32  warning  'Briefcase' is defined but never used     @typescript-eslint/no-unused-vars
+  6:8   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\OnboardingWizard.tsx
+   19:10  warning  'analysisResult' is assigned a value but never used              @typescript-eslint/no-unused-vars
+   19:56  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  117:66  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  339:21  error    `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`  react/no-unescaped-entities
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\ProfileEditModals.tsx
+    4:36   warning  'FileText' is defined but never used         @typescript-eslint/no-unused-vars
+    4:46   warning  'Sparkles' is defined but never used         @typescript-eslint/no-unused-vars
+   19:17   error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+   53:14   warning  'err' is defined but never used              @typescript-eslint/no-unused-vars
+  134:14   warning  'err' is defined but never used              @typescript-eslint/no-unused-vars
+  222:133  error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+  289:19   error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+  415:14   warning  'err' is defined but never used              @typescript-eslint/no-unused-vars
+  460:9    warning  'isDark' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\ServiceWorkerRegister.tsx
+  10:16  warning  'registration' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\ThemeToggleBlur.tsx
+  26:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\ThemeToggleBlur.tsx:26:5
+  24 |
+  25 |   useEffect(() => {
+> 26 |     setMounted(true);
+     |     ^^^^^^^^^^ Avoid calling setState() directly within an effect
+  27 |   }, []);
+  28 |
+  29 |   const toggleTheme = async () => {  react-hooks/set-state-in-effect
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\components\Toast.tsx
+  5:18  warning  'AnimatePresence' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\COLLEGE WORK\MY PROJECTS\VIBE CODED PROJECTS\JOB AGGREGATOR\frontend\src\utils\onboarding.ts
+   1:10  warning  'createClient' is defined but never used  @typescript-eslint/no-unused-vars
+  29:19  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+✖ 80 problems (40 errors, 40 warnings)
+  2 errors and 0 warnings potentially fixable with the `--fix` option.
+

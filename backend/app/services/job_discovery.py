@@ -1,15 +1,54 @@
 from __future__ import annotations
 
 import logging
+import os
+import time
+import requests
+from threading import Lock
 from typing import List, Optional
 
-from duckduckgo_search import DDGS
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.crud import opportunity as opportunity_crud
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# ADZUNA API CONFIGURATION
+# =============================================================================
+
+ADZUNA_APP_ID = os.getenv("ADZUNA_APP_ID")
+ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY")
+ADZUNA_BASE_URL = "https://api.adzuna.com/v1/api/jobs/in/search/1"
+
+# =============================================================================
+# RATE LIMITER
+# =============================================================================
+
+_RATE_LIMIT_STORE = {}   # key → last_call_timestamp
+_RATE_LOCK = Lock()
+API_COOLDOWN = 90        # seconds between API calls for the same key
+
+def _check_rate_limit(identifier: str) -> bool:
+    """Returns True if the API call is allowed, False if rate-limited.
+    
+    Key should be a combination of (user_id or IP) + query.
+    """
+    key = identifier.strip().lower()
+    now = time.time()
+    with _RATE_LOCK:
+        last = _RATE_LIMIT_STORE.get(key, 0)
+        if now - last < API_COOLDOWN:
+            remaining = int(API_COOLDOWN - (now - last))
+            logger.info(f"⏱️ Rate limited: '{key}' — retry in {remaining}s")
+            return False
+        _RATE_LIMIT_STORE[key] = now
+        return True
+
+# =============================================================================
+# NLP PROCESSOR (Preserved)
+# =============================================================================
 
 class NLPProcessor:
     """
@@ -23,7 +62,6 @@ class NLPProcessor:
 
     @staticmethod
     def extract_location(snippet: str, default: str) -> str:
-        # Simple heuristic: check for common cities if default is generic
         cities = ["Bangalore", "Bengaluru", "Mumbai", "Delhi", "Hyderabad", "Pune", "Chennai", "Gurgaon", "Noida", "Remote"]
         for city in cities:
             if city.lower() in snippet.lower():
@@ -32,7 +70,6 @@ class NLPProcessor:
 
     @staticmethod
     def extract_salary(snippet: str) -> str:
-        # Regex to find salary patterns like "10 LPA", "10-15 LPA", "$100k"
         import re
         match = re.search(r'(\d+(\.\d+)?\s?-\s?\d+(\.\d+)?\s?LPA)|(\d+\s?LPA)', snippet, re.IGNORECASE)
         if match:
@@ -57,134 +94,113 @@ class NLPProcessor:
             return models.WorkMode.HYBRID
         return models.WorkMode.ONSITE
 
-class SourceHandler:
-    def search(self, query: str, limit: int, ddgs: DDGS) -> List[dict]:
-        raise NotImplementedError
 
-class LinkedInHandler(SourceHandler):
-    def search(self, query: str, limit: int, ddgs: DDGS) -> List[dict]:
-        # Targeted LinkedIn search
-        search_query = f"site:linkedin.com/jobs {query}"
-        results = []
-        try:
-            # DDGS context manager handles headers/User-Agent
-            raw_res = ddgs.text(search_query, max_results=limit)
-            for res in raw_res:
-                title = res.get("title", "").split("|")[0].split("-")[0].strip()
-                company = "LinkedIn Job"
-                if " at " in title:
-                    parts = title.split(" at ")
-                    title = parts[0].strip()
-                    company = parts[1].strip()
-                
-                results.append({
-                    "role": title,
-                    "company": company,
-                    "link": res.get("href"),
-                    "source": "LinkedIn",
-                    "snippet": res.get("body", "")
-                })
-        except Exception as e:
-            logger.error(f"LinkedIn search failed: {e}")
-        return results
+# =============================================================================
+# ADZUNA API FETCHER
+# =============================================================================
 
-class IndeedHandler(SourceHandler):
-    def search(self, query: str, limit: int, ddgs: DDGS) -> List[dict]:
-        search_query = f"site:indeed.com/viewjob {query}"
-        results = []
-        try:
-            raw_res = ddgs.text(search_query, max_results=limit)
-            for res in raw_res:
-                title = res.get("title", "").split("-")[0].strip()
-                results.append({
-                    "role": title,
-                    "company": "Indeed Listing",
-                    "link": res.get("href"),
-                    "source": "Indeed",
-                    "snippet": res.get("body", "")
-                })
-        except Exception as e:
-            logger.error(f"Indeed search failed: {e}")
-        return results
+_nlp = NLPProcessor()
 
-class UnstopHandler(SourceHandler):
-    def search(self, query: str, limit: int, ddgs: DDGS) -> List[dict]:
-        search_query = f"site:unstop.com/competitions {query}"
-        results = []
-        try:
-            raw_res = ddgs.text(search_query, max_results=limit)
-            for res in raw_res:
-                results.append({
-                    "role": res.get("title", "").split("|")[0].strip(),
-                    "company": "Unstop Opportunity",
-                    "link": res.get("href"),
-                    "source": "Unstop",
-                    "snippet": res.get("body", "")
-                })
-        except Exception as e:
-            logger.error(f"Unstop search failed: {e}")
-        return results
+def _fetch_adzuna_jobs(query: str, location: str = "India", limit: int = 10) -> List[dict]:
+    """
+    Calls Adzuna API and returns a normalized list of job dicts.
+    
+    Each dict has: role, company, link, snippet, source,
+                   extracted_location, extracted_type, extracted_mode, extracted_salary
+    """
+    if not ADZUNA_APP_ID or not ADZUNA_APP_KEY:
+        logger.error("❌ Adzuna credentials not configured (ADZUNA_APP_ID / ADZUNA_APP_KEY)")
+        return []
 
-class CareerPageHandler(SourceHandler):
-    def search(self, query: str, limit: int, ddgs: DDGS) -> List[dict]:
-        search_query = f'"careers" "jobs" {query} -site:linkedin.com -site:indeed.com'
-        results = []
-        try:
-            raw_res = ddgs.text(search_query, max_results=limit)
-            for res in raw_res:
-                results.append({
-                    "role": res.get("title", "").split("-")[0].strip(),
-                    "company": "Official Career Page",
-                    "link": res.get("href"),
-                    "source": "Official",
-                    "snippet": res.get("body", "")
-                })
-        except Exception as e:
-            logger.error(f"Career page search failed: {e}")
-        return results
+    params = {
+        "app_id": ADZUNA_APP_ID,
+        "app_key": ADZUNA_APP_KEY,
+        "results_per_page": min(limit, 20),
+        "what": query,
+        "where": location,
+        "content-type": "application/json",
+    }
 
-class AdvancedJobAgent:
-    def __init__(self):
-        self.handlers = [
-            LinkedInHandler(),
-            IndeedHandler(),
-            UnstopHandler(),
-            # CareerPageHandler() # Skipped as per user request
-        ]
-        self.nlp = NLPProcessor()
+    logger.info(f"🌍 Fetching Adzuna: '{query}' in {location}")
 
-    def search_jobs(self, query: str, limit_per_source: int = 3) -> List[dict]:
-        all_results = []
-        # Use Context Manager for DDGS
-        with DDGS() as ddgs:
-            for handler in self.handlers:
-                found = handler.search(query, limit_per_source, ddgs)
-                # Post-process with NLP
-                for job in found:
-                    job["snippet"] = self.nlp.clean_text(job["snippet"])
-                    job["extracted_location"] = self.nlp.extract_location(job["snippet"], "Unknown")
-                    job["extracted_salary"] = self.nlp.extract_salary(job["snippet"])
-                    job["extracted_type"] = self.nlp.extract_job_type(job["snippet"])
-                    job["extracted_mode"] = self.nlp.extract_work_mode(job["snippet"])
-                all_results.extend(found)
-        return all_results
+    try:
+        response = requests.get(ADZUNA_BASE_URL, params=params, timeout=10)
 
-def discover_jobs(db: Session, skills: List[str], location: str = None, salary_min: str = None, limit: int = 10) -> List[models.Opportunity]:
+        if response.status_code != 200:
+            logger.error(f"❌ Adzuna API error: {response.status_code}")
+            return []
+
+        data = response.json()
+        results = data.get("results", [])
+
+        normalized = []
+        for job in results:
+            redirect_url = job.get("redirect_url")
+            if not redirect_url:
+                continue
+
+            description = job.get("description", "")
+            title = job.get("title", "Unknown Role")
+            company = job.get("company", {}).get("display_name", "Unknown")
+            loc = job.get("location", {}).get("display_name", location)
+
+            normalized.append({
+                "role": title,
+                "company": company,
+                "link": redirect_url,
+                "snippet": _nlp.clean_text(description),
+                "source": "Adzuna",
+                "extracted_location": _nlp.extract_location(description, loc),
+                "extracted_salary": _nlp.extract_salary(description),
+                "extracted_type": _nlp.extract_job_type(f"{title} {description}"),
+                "extracted_mode": _nlp.extract_work_mode(f"{title} {description}"),
+            })
+
+        logger.info(f"📊 Adzuna returned {len(normalized)} jobs")
+        return normalized
+
+    except requests.exceptions.Timeout:
+        logger.error("❌ Adzuna API timeout")
+        return []
+    except Exception as e:
+        logger.error(f"❌ Adzuna API failed: {e}")
+        return []
+
+
+# =============================================================================
+# MAIN ENTRY POINT
+# =============================================================================
+
+def discover_jobs(
+    db: Session,
+    skills: List[str],
+    location: str = None,
+    salary_min: str = None,
+    limit: int = 10,
+    identifier: str = None,
+) -> List[models.Opportunity]:
     """
     Discover jobs based on skills, location, and salary.
+    Uses Adzuna API with per-user rate limiting.
+    Falls back to existing DB results when rate-limited.
     """
-    agent = AdvancedJobAgent()
-    
     # Construct a smart query
     query_parts = skills[:3]
     if location:
         query_parts.append(location)
-    
+
     query = " ".join(query_parts)
-    
+
+    # Rate limit check (keyed on identifier + query)
+    rate_key = f"{identifier or 'global'}:{query}"
+    if not _check_rate_limit(rate_key):
+        logger.info("📦 Rate limited — returning existing DB results as fallback")
+        existing_opps, _ = opportunity_crud.list_opportunities(db, limit=limit)
+        return existing_opps
+
     logger.info(f"Agent searching for jobs with query: {query}")
-    raw_jobs = agent.search_jobs(query, limit_per_source=3)
-    
+    raw_jobs = _fetch_adzuna_jobs(query, location=location or "India", limit=limit)
+
     saved_opportunities = []
     for job in raw_jobs:
         # Check if link already exists to avoid duplicates
@@ -192,18 +208,12 @@ def discover_jobs(db: Session, skills: List[str], location: str = None, salary_m
         if existing:
             continue
 
-        # Map source string to Enum
+        # Source is always Adzuna now
         source_enum = models.OpportunitySource.OTHER
-        if "LinkedIn" in job["source"]:
-            source_enum = models.OpportunitySource.LINKEDIN
-        elif "Unstop" in job["source"]:
-            source_enum = models.OpportunitySource.UNSTOP
-        elif "Official" in job["source"]:
-            source_enum = models.OpportunitySource.OFFICIAL
 
         # Use extracted data if available, else fallback
         final_location = job.get("extracted_location", location if location else "Unknown")
-        
+
         # Create Opportunity object
         opportunity_in = schemas.OpportunityBase(
             company_name=job["company"],
@@ -211,17 +221,17 @@ def discover_jobs(db: Session, skills: List[str], location: str = None, salary_m
             job_type=job.get("extracted_type", models.JobType.FULL_TIME),
             work_mode=job.get("extracted_mode", models.WorkMode.HYBRID),
             location=final_location,
-            link_url=job["link"],
+            apply_link=job["link"],
             source=source_enum,
             status=models.OpportunityStatus.OPEN,
             source_metadata={
-                "snippet": job["snippet"], 
-                "origin": "ai_agent", 
+                "snippet": job["snippet"],
+                "origin": "adzuna_discover",
                 "query": query,
-                "salary_extracted": job.get("extracted_salary")
-            }
+                "salary_extracted": job.get("extracted_salary"),
+            },
         )
-        
+
         try:
             new_op = opportunity_crud.create_opportunity(db, opportunity_in)
             saved_opportunities.append(new_op)

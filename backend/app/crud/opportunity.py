@@ -24,6 +24,11 @@ def create_opportunity(
   return opportunity
 
 
+def get_opportunity_by_link(db: Session, link: str) -> Optional[Opportunity]:
+  """Look up an opportunity by its apply_link to avoid duplicates."""
+  return db.query(Opportunity).filter(Opportunity.apply_link == link).first()
+
+
 def list_opportunities(
   db: Session,
   *,

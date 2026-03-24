@@ -1,0 +1,3 @@
+src/app/dashboard/cv-tailor/page.tsx(240,42): error TS1127: Invalid character.
+src/app/dashboard/cv-tailor/page.tsx(240,72): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/app/dashboard/cv-tailor/page.tsx(243,24): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?

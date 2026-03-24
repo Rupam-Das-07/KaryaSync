@@ -2,6 +2,8 @@ name: CareerSync Job Agent
 
 on:
   workflow_dispatch:
+  # repository_dispatch:
+  #   types: [run-agent]   
 
 jobs:
   run-agent:
