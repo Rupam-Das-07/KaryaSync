@@ -194,6 +194,10 @@ def list_opportunities(
   job_type: Optional[str] = None,
   db: Session = Depends(get_db),
 ) -> schemas.PaginatedOpportunities:
+  # 0. Clamp pagination bounds
+  page = max(1, page)
+  limit = max(1, min(limit, 100))
+
   # 1. Check Cache
   cache_key = f"opps:p{page}:l{limit}:src{source}:st{status}:jt{job_type}"
   cached = get_cache(cache_key)
@@ -306,6 +310,12 @@ async def analyze_cv(
   
   # Read content
   content = await file.read()
+
+  # Validate file type and size
+  if not file.filename or not file.filename.lower().endswith(".pdf"):
+      raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+  if len(content) > 5 * 1024 * 1024:
+      raise HTTPException(status_code=400, detail="File too large (max 5MB)")
   
   # Save file locally
   filename = f"{uuid.uuid4()}_{file.filename}"
@@ -536,6 +546,8 @@ def ats_check(
   payload: ATSCheckRequest,
   db: Session = Depends(get_db)
 ):
+  if not payload.job_description.strip():
+      raise HTTPException(status_code=400, detail="Job description cannot be empty")
   # 1. Get User's Skills from DB (CV Uploads or Job Preferences)
   # For now, let's try to fetch from the latest CV upload
   # Since we don't have a direct "get latest CV" CRUD method exposed here easily,
@@ -607,6 +619,8 @@ async def analyze_ats_upload(
   file: UploadFile = File(...),
   job_description: str = Form(...),
 ):
+  if not job_description.strip():
+      raise HTTPException(status_code=400, detail="Job description cannot be empty")
   analyzer = ATSAnalyzer()
   content = await file.read()
   
@@ -852,6 +866,7 @@ def deep_scan(
     print(f"🚀 Deep Scan API called: skills={payload.skills}, location={payload.location}")
 
     skills_list = [s.strip() for s in payload.skills.split(",") if s.strip()]
+    effective_limit = max(1, min(payload.limit, 50))
 
     if not skills_list:
         with _scan_lock:
@@ -863,7 +878,7 @@ def deep_scan(
         skills_list=skills_list,
         location=payload.location,
         job_type=payload.job_type,
-        limit=payload.limit,
+        limit=effective_limit,
         experience_years=payload.experience_years,
     )
 
