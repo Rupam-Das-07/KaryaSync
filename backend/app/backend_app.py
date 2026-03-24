@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time as dt_time
 from typing import List, Optional
 import uuid
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 import requests # Top-level import
-
-# ... (imports)
-
-
-# ... (imports)
 
 
 
@@ -67,7 +62,7 @@ def _status_from_legacy(value: str | None) -> schemas.OpportunityStatus:
 
 
 def _as_datetime(value: date) -> datetime:
-  return datetime.combine(value, time.min)
+  return datetime.combine(value, dt_time.min)
 
 from app import schemas
 from app.schemas.queue import SearchQueueResponse # Explicit import if not in __init__
@@ -445,125 +440,7 @@ def read_user(user_id: str, db: Session = Depends(get_db)):
 
 
 
-def trigger_github_action():
-  """Background task to trigger GitHub Actions"""
-  print("⚡ Triggering GitHub Actions workflow (Async)")
-  try:
-      import os
-      import requests
-      git_token = os.environ.get("GITHUB_ACTIONS_TOKEN")
-      git_owner = os.environ.get("GITHUB_REPO_OWNER")
-      git_repo = os.environ.get("GITHUB_REPO_NAME")
-      git_workflow = os.environ.get("GITHUB_WORKFLOW_FILE", "job_agent.yml")
-      
-      # UNCONDITIONAL TRIGGER ATTEMPT
-      url = f"https://api.github.com/repos/{git_owner}/{git_repo}/actions/workflows/{git_workflow}/dispatches"
-      headers = {
-          "Authorization": f"Bearer {git_token}",
-          "Accept": "application/vnd.github+json",
-          "X-GitHub-Api-Version": "2022-11-28"
-      }
-      payload_data = {"ref": "main"}
-      
-      resp = requests.post(url, json=payload_data, headers=headers, timeout=10)
-      
-      if resp.status_code in [200, 204]:
-          print("✅ GitHub Actions dispatch sent successfully")
-      else:
-          print(f"❌ GitHub trigger failed: {resp.status_code} - {resp.text}")
 
-  except Exception as e:
-      print(f"❌ GitHub trigger failed with exception: {str(e)}")
-
-@app.post("/opportunities/discover", response_model=schemas.SearchQueueResponse)
-def discover_opportunities(
-  payload: schemas.DiscoverRequest,
-  background_tasks: BackgroundTasks,
-  user_id: Optional[str] = None, # Optional for now, or extract from auth if available
-  db: Session = Depends(get_db)
-):
-  import logging
-  from app.models.queue import SearchQueue
-  
-  # 1. Log Request
-  print("🚀 Deep Scan requested")
-
-  # Helper to normalize locations
-  def normalize_locations(loc_list: List[str]) -> List[str]:
-      out = []
-      for l in loc_list or []:
-          if not l: continue
-          s = l.strip()
-          if not s: continue
-          s = s.title()
-          if s not in out:
-              out.append(s)
-      return out
-
-  # 1. Resolve Locations
-  locations = []
-  resolved_locations_source = "default"
-
-  # a) Request
-  req_locs = []
-  if payload.preferred_locations:
-      req_locs.extend(payload.preferred_locations)
-  if payload.location:
-      req_locs.append(payload.location)
-  
-  req_locs = normalize_locations(req_locs)
-  
-  if req_locs:
-      locations = req_locs
-      resolved_locations_source = "request"
-  else:
-      pass
-
-  if not locations:
-      # c) Default
-      locations = ["Unknown"] 
-      resolved_locations_source = "default"
-
-  # 2. Build Query
-  # Prioritize Roles (Designations) if provided
-  if payload.roles and len(payload.roles) > 0:
-      base_query = " OR ".join(payload.roles)
-      query_parts = [base_query]
-  else:
-      # Fallback to skills
-      query_parts = payload.skills[:3]
-      
-  if locations and locations[0] != "Unknown":
-      query_parts.append(locations[0])
-  
-  task_query = " ".join(query_parts)
-  
-  # 3. Validation
-  if not task_query.strip():
-      raise HTTPException(status_code=400, detail="Query cannot be empty. Please provide skills or location.")
-
-  # 4. Create Queue Item
-  queue_item = SearchQueue(
-      query=task_query,
-      resolved_locations_source=resolved_locations_source,
-      filters={
-          "location": payload.location, # Keep original raw input
-          "resolved_locations": locations, # Store resolved list
-          "salary_min": payload.salary_min,
-          "limit": payload.limit,
-          "skills": payload.skills
-      }
-  )
-  db.add(queue_item)
-  db.commit()
-  db.refresh(queue_item)
-  
-  print("📦 Queue item created")
-  
-  # 5. Trigger GitHub Action (Background Task)
-  background_tasks.add_task(trigger_github_action)
-  
-  return queue_item
 
 
 @app.post(
@@ -805,7 +682,7 @@ def discover_opportunities(
           if not l: continue
           s = l.strip()
           if not s: continue
-          pass
+
           s = s.title()
           if s not in out:
               out.append(s)
@@ -882,4 +759,113 @@ def discover_opportunities(
       raise HTTPException(status_code=500, detail=f"Failed to trigger agent: {msg}")
 
   return queue_item
+
+
+# =============================================================================
+# DIRECT DEEP SCAN — Non-Blocking Background Task
+# =============================================================================
+
+import sys as _sys
+import os as _os
+
+# Add local_agent to path so we can import run_search
+_sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', '..', 'local_agent'))
+
+class DeepScanRequest(BaseModel):
+    skills: str  # comma-separated skills/roles
+    location: str = "India"
+    job_type: Optional[str] = None  # "fulltime" or "internship"
+    limit: int = 20
+    experience_years: int = 0
+
+class DeepScanResponse(BaseModel):
+    status: str
+    message: str
+
+class ScanStatusResponse(BaseModel):
+    status: str  # "idle" | "running" | "completed"
+
+# Thread-safe scan status tracking
+from threading import Lock as _ScanLock
+_scan_lock = _ScanLock()
+_scan_status = "idle"  # "idle" | "running" | "completed"
+
+def run_deep_scan_task(skills_list: list, location: str, job_type: str | None, limit: int, experience_years: int):
+    """Background worker: creates its own DB session, runs scraping, then cleans up."""
+    global _scan_status
+    from app.db.session import SessionLocal as _SessionLocal
+    from app.models import Opportunity
+
+    print(f"🔧 [Background] Deep Scan started for skills: {skills_list} in {location}")
+    db = _SessionLocal()
+    try:
+        from agent_main import run_search
+
+        # Count jobs before scan
+        jobs_before = db.query(Opportunity).count()
+
+        run_search(
+            skills=skills_list,
+            location=location,
+            job_type=job_type,
+            limit=limit,
+            scan_mode="DEEP",
+            experience_years=experience_years,
+            db=db
+        )
+
+        # Count jobs after scan
+        jobs_after = db.query(Opportunity).count()
+        jobs_added = jobs_after - jobs_before
+
+        # Invalidate cache so the next GET /opportunities returns fresh data
+        clear_cache()
+        print(f"✅ [Background] Deep Scan completed — {jobs_added} jobs added")
+
+    except Exception as e:
+        print(f"❌ [Background] Deep Scan failed: {e}")
+    finally:
+        db.close()
+        with _scan_lock:
+            _scan_status = "completed"
+
+@app.get("/scan-status", response_model=ScanStatusResponse)
+def get_scan_status():
+    """Returns the current status of the background Deep Scan."""
+    with _scan_lock:
+        return ScanStatusResponse(status=_scan_status)
+
+@app.post("/deep-scan", response_model=DeepScanResponse)
+def deep_scan(
+    payload: DeepScanRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Triggers JobSpy deep scraping as a background task (non-blocking)."""
+    global _scan_status
+
+    # Concurrency guard
+    with _scan_lock:
+        if _scan_status == "running":
+            return DeepScanResponse(status="error", message="A scan is already in progress. Please wait.")
+        _scan_status = "running"
+
+    print(f"🚀 Deep Scan API called: skills={payload.skills}, location={payload.location}")
+
+    skills_list = [s.strip() for s in payload.skills.split(",") if s.strip()]
+
+    if not skills_list:
+        with _scan_lock:
+            _scan_status = "idle"
+        raise HTTPException(status_code=400, detail="No skills provided.")
+
+    background_tasks.add_task(
+        run_deep_scan_task,
+        skills_list=skills_list,
+        location=payload.location,
+        job_type=payload.job_type,
+        limit=payload.limit,
+        experience_years=payload.experience_years,
+    )
+
+    return DeepScanResponse(status="started", message="Deep scan started. Jobs will appear shortly.")
 

@@ -13,8 +13,7 @@ import {
   List,
   MapPin,
   AlertTriangle,
-  RefreshCw,
-  FileSignature
+  RefreshCw
 } from "lucide-react";
 import { checkOnboardingStatus } from "@/utils/onboarding";
 import ScanLoader from "@/components/ScanLoader";
@@ -202,62 +201,140 @@ export default function HomePage() {
         .eq('user_id', user.id)
         .single();
 
-      let searchQuery = "Software Engineer";
-      let location = "India";
-      let filters: any = { scan_mode: mode };
+      const skills = prefs?.desired_roles?.join(",") || "Software Engineer";
+      const location = prefs?.preferred_locations?.[0] || "India";
+      const jobType = skills.toLowerCase().includes("intern") ? "internship" : "fulltime";
 
-      if (prefs) {
-        const role = prefs.desired_roles?.[0] || "Developer";
-        location = prefs.preferred_locations?.[0] || "India";
-        searchQuery = role;
+      if (mode === 'DEEP') {
+        // Non-blocking call to /deep-scan (returns immediately)
+        setScanMessage("Starting Deep Scan...");
+        
+        const res = await fetch(`${API_BASE_URL}/deep-scan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            skills,
+            location,
+            job_type: jobType,
+            limit: 20,
+            experience_years: 0
+          })
+        });
 
-        if (role.toLowerCase().includes("intern")) filters.is_internship = true;
-        if (location.toLowerCase().includes("remote")) filters.is_remote = true;
-        else filters.location = location;
-      }
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: "Unknown error" }));
+          throw new Error(err.detail || `Deep Scan failed (${res.status})`);
+        }
 
-
-
-      const { data: task, error } = await supabase
-        .from('search_queue')
-        .insert({
-          user_id: user.id,
-          query: searchQuery,
-          status: 'PENDING',
-          filters: filters,
-          resolved_locations_source: 'request',
-          task_type: 'SEARCH'
-        })
-        .select()
-        .single();
-
-      if (error || !task) throw error || new Error("Task creation failed");
-
-      const taskId = task.id;
-      const pollInterval = setInterval(async () => {
-        const { data: currentTask, error: pollError } = await supabase
-          .from('search_queue')
-          .select('status')
-          .eq('id', taskId)
-          .single();
-
-        if (pollError || currentTask.status === 'FAILED') {
-          clearInterval(pollInterval);
+        const data = await res.json();
+        if (data.status === "error") {
+          alert(`⚠️ ${data.message}`);
           setScanning(false);
-          alert("Job Hunt Failed. Please try again.");
           return;
         }
 
-        if (currentTask.status === 'COMPLETED') {
-          clearInterval(pollInterval);
-          setScanMessage("Success! Refreshing list...");
-          await fetchJobs();
-          setTimeout(() => setScanning(false), 1500);
-        }
-      }, 2000);
+        // Scan is running in the background — poll with status awareness
+        setScanMessage("Deep Scan in progress... New jobs will appear shortly.");
+        
+        let pollCount = 0;
+        let stableCount = 0;
+        let previousJobCount = jobs.length;
+        const maxPolls = 18; // 18 × 5s = 90s max
 
-    } catch (err: any) {
-      console.error("Scan failed:", err);
+        const pollInterval = setInterval(async () => {
+          pollCount++;
+
+          // Check backend scan status
+          try {
+            const statusRes = await fetch(`${API_BASE_URL}/scan-status`);
+            const statusData = await statusRes.json();
+            
+            if (statusData.status === "completed") {
+              await fetchJobs();
+              clearInterval(pollInterval);
+              setScanMessage("Deep Scan complete!");
+              setTimeout(() => setScanning(false), 1500);
+              return;
+            }
+          } catch {
+            // Status check failed — continue polling normally
+          }
+
+          // Refresh jobs  
+          await fetchJobs();
+
+          // Fallback: stable count check
+          const currentJobCount = jobs.length;
+          if (currentJobCount === previousJobCount) {
+            stableCount++;
+          } else {
+            stableCount = 0;
+            previousJobCount = currentJobCount;
+          }
+
+          if (stableCount >= 2 || pollCount >= maxPolls) {
+            clearInterval(pollInterval);
+            setScanMessage("Deep Scan complete!");
+            setTimeout(() => setScanning(false), 1500);
+          }
+        }, 5000);
+
+        // Fallback auto-stop with user-friendly message
+        setTimeout(() => {
+          clearInterval(pollInterval);
+          setScanMessage("Scan may still be running in the background. New jobs may appear shortly.");
+          setTimeout(() => setScanning(false), 3000);
+        }, 90000);
+      } else {
+        // FAST mode: use existing Supabase queue + polling flow
+        const filters: Record<string, unknown> = { scan_mode: mode };
+        if (jobType === "internship") filters.is_internship = true;
+        if (location.toLowerCase().includes("remote")) filters.is_remote = true;
+        else filters.location = location;
+
+        const { data: task, error } = await supabase
+          .from('search_queue')
+          .insert({
+            user_id: user.id,
+            query: prefs?.desired_roles?.[0] || "Software Engineer",
+            status: 'PENDING',
+            filters: filters,
+            resolved_locations_source: 'request',
+            task_type: 'SEARCH'
+          })
+          .select()
+          .single();
+
+        if (error || !task) throw error || new Error("Task creation failed");
+
+        const taskId = task.id;
+        const pollInterval = setInterval(async () => {
+          const { data: currentTask, error: pollError } = await supabase
+            .from('search_queue')
+            .select('status')
+            .eq('id', taskId)
+            .single();
+
+          if (pollError || currentTask.status === 'FAILED') {
+            clearInterval(pollInterval);
+            setScanning(false);
+            alert("Job Hunt Failed. Please try again.");
+            return;
+          }
+
+          if (currentTask.status === 'COMPLETED') {
+            clearInterval(pollInterval);
+            setScanMessage("Success! Refreshing list...");
+            await fetchJobs();
+            setTimeout(() => setScanning(false), 1500);
+          }
+        }, 2000);
+      }
+
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Scan failed";
+      console.error("Scan failed:", message);
+      alert(`❌ ${message}`);
       setScanning(false);
     }
   };
@@ -375,14 +452,6 @@ export default function HomePage() {
               className="flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-full hover:bg-amber-700 transition shadow-sm disabled:opacity-70 font-semibold text-sm"
             >
               <Search className="h-4 w-4" /> Deep Scan
-            </button>
-
-            <button
-              onClick={() => router.push('/dashboard/cv-tailor')}
-              className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-full hover:bg-emerald-700 transition shadow-sm font-semibold text-sm"
-              title="Tailor your CV perfectly to a Job Description"
-            >
-              <FileSignature className="h-4 w-4" /> Tailor CV
             </button>
           </div>
         </div>

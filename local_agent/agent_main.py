@@ -1,5 +1,3 @@
-import time
-import signal
 import os
 import sys
 import requests
@@ -11,7 +9,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from jobspy import scrape_jobs
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 from sklearn.feature_extraction.text import CountVectorizer
@@ -21,8 +19,7 @@ from pypdf import PdfReader
 # Add backend to path to import models
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
-from app.models.queue import SearchQueue, SearchStatus
-from app.models import Opportunity, OpportunitySource, JobType, WorkMode, OpportunityStatus, JobPreference
+from app.models import Opportunity, OpportunitySource, JobType, WorkMode, OpportunityStatus
 
 # =============================================================================
 # CONFIGURATION & SETUP
@@ -396,13 +393,19 @@ def _scan_company_portal(company, portal_link, role_filters, db):
         return 0, str(e)
 
 # =============================================================================
-# MAIN FETCHERS
+# MAIN FETCHERS (Direct Parameter API)
 # =============================================================================
 
-def fetch_adzuna(task, db):
-    """Fetches jobs from Adzuna API."""
-    filters = task.filters or {}
-    print(f"🕵️ DEBUG: Adzuna Task Received. RAW Filters: {filters}")
+def fetch_adzuna(query, location, filters, db):
+    """Fetches jobs from Adzuna API.
+    
+    Args:
+        query: Search query string (e.g. "Software Engineer")
+        location: Location string (e.g. "India", "Remote")
+        filters: Dict with optional keys: experience_years, is_internship, is_remote
+        db: SQLAlchemy session
+    """
+    print(f"🕵️ Adzuna Search: '{query}' in {location}")
     
     try: experience_years = int(filters.get("experience_years", 0))
     except: experience_years = 0
@@ -417,12 +420,7 @@ def fetch_adzuna(task, db):
 
     query_extras = " Internship" if filters.get("is_internship") else ""
     
-    location = "India"
-    if filters.get("is_remote"): location = "Remote"
-    elif filters.get("location"): location = filters.get("location")
-
-    raw_query = task.query or ""
-    sub_queries = [q.strip() for q in raw_query.split(" OR ")] if " OR " in raw_query else [raw_query]
+    sub_queries = [q.strip() for q in query.split(" OR ")] if " OR " in query else [query]
     sub_queries = sub_queries[:3] # Rate limit protection
     
     total_saved = 0
@@ -460,21 +458,20 @@ def fetch_adzuna(task, db):
     print(f"💾 Adzuna Saved Total: {total_saved}")
     return total_saved
 
-def fetch_jobspy(task, db):
-    """Fetches jobs using JobSpy scraper (Deep Scan)."""
-    filters = task.filters or {}
-    query = task.query
+def fetch_jobspy(query, location, filters, db):
+    """Fetches jobs using JobSpy scraper (Deep Scan).
     
+    Args:
+        query: Search query string
+        location: Location string
+        filters: Dict with optional keys: experience_years, is_internship
+        db: SQLAlchemy session
+    """
     try: experience_years = int(filters.get("experience_years", 0))
     except: experience_years = 0
         
-    print(f"🕵️ DEBUG: JobSpy Task. Query: '{query}', Exp: {experience_years}")
+    print(f"🕵️ JobSpy Deep Scan: '{query}' in {location}, Exp: {experience_years}")
     
-    location = "India"
-    if filters.get("is_remote"): location = "Remote"
-    elif filters.get("location"): location = filters.get("location")
-
-    print(f"🕵️‍♀️ Triggering JobSpy (DEEP): {query} in {location}")
     try:
         job_type_param = "internship" if filters.get("is_internship") else "fulltime"
         
@@ -503,7 +500,7 @@ def fetch_jobspy(task, db):
         print(f"❌ JobSpy Failed: {e}")
         return 0
 
-def fetch_knowledge_base_career_pages(task, db, role_filters):
+def fetch_knowledge_base_career_pages(db, role_filters):
     """
     Crawls official career pages using 'career_page_status.json'.
     Self-optimizes by skipping known 'NON-WORKING' sites.
@@ -584,82 +581,63 @@ def fetch_knowledge_base_career_pages(task, db, role_filters):
     return saved_count
 
 # =============================================================================
-# HANDLERS
+# HANDLERS (Direct Parameter API)
 # =============================================================================
 
-def handle_search_task(task, db):
-    """Orchestrates job search based on mode (FAST vs DEEP)."""
-    print(f"🚀 Processing SEARCH task {task.id}")
-    filters = task.filters or {}
-    scan_mode = filters.get("scan_mode", "FAST")
-
-    # 1. Resolve Preferences (DB > Task)
-    user_prefs = db.query(JobPreference).filter(JobPreference.user_id == task.user_id).first()
+def run_search(skills, location="India", job_type=None, limit=20, scan_mode="FAST", experience_years=0, db=None):
+    """Orchestrates job search with direct parameters.
     
-    search_roles = []
-    if user_prefs and user_prefs.desired_roles:
-        search_roles = user_prefs.desired_roles
-        print(f"✅ Found Profile Roles in DB: {search_roles}")
-    else:
-        raw_query = task.query or ""
-        search_roles = [q.strip() for q in raw_query.split(" OR ")] if " OR " in raw_query else [raw_query]
-        print(f"⚠️ Using Task Query: {search_roles}")
-
-    search_roles = list(set([r for r in search_roles if r]))
-    if not search_roles:
-        print("❌ No roles to search for! Aborting.")
+    Args:
+        skills: List of skill/role strings to search for
+        location: Location string (default "India")
+        job_type: Optional "internship" or "fulltime"
+        limit: Max results per query (default 20)
+        scan_mode: "FAST" (Adzuna) or "DEEP" (JobSpy)
+        experience_years: Years of experience (default 0)
+        db: SQLAlchemy session
+    """
+    if not skills:
+        print("❌ No skills/roles provided. Aborting.")
         return
 
-    experience_years = 0
-    if user_prefs:
-        experience_years = user_prefs.experience_years
-        print(f"🎓 Profile Experience: {experience_years} Years")
-    else:
-        try: experience_years = int(filters.get("experience_years", 0))
-        except: pass
-        print(f"🎓 Filter Experience: {experience_years} Years")
+    search_roles = skills if isinstance(skills, list) else [skills]
+    search_roles = list(set([r for r in search_roles if r]))
+    
+    print(f"🔎 Searching for roles: {search_roles}")
+    print(f"   📍 Location: {location} | Mode: {scan_mode} | Exp: {experience_years}y")
 
-    # 2. External Aggregator Loop (One pass per role)
+    filters = {
+        "experience_years": experience_years,
+        "is_internship": job_type == "internship",
+        "is_remote": location.lower() == "remote",
+    }
+
     for role in search_roles:
         print(f"🔎 Hunting for Role: {role}")
         
-        # Temporary patch for fetchers
-        original_query = task.query
-        task.query = role 
-        if user_prefs:
-             if task.filters is None: task.filters = {}
-             task.filters['experience_years'] = experience_years
-        
         if scan_mode == "DEEP":
-            fetch_jobspy(task, db)
+            fetch_jobspy(role, location, filters, db)
         else:
-            saved_count = fetch_adzuna(task, db)
-            if saved_count < 3 and filters.get("auto_deep_fallback", False):
+            saved_count = fetch_adzuna(role, location, filters, db)
+            if saved_count < 3:
                  print(f"⚠️ Low results for '{role}'. Auto-triggering Deep Scan...")
-                 fetch_jobspy(task, db)
-                 
-        task.query = original_query
-
-    # 3. Official Layer (Run ONCE)
-    # Skipped as per user request
-    # if scan_mode == "DEEP":
-    #     print(f"🏁 Starting Official Career Scan for roles: {search_roles}")
-    #     try:
-    #         fetch_knowledge_base_career_pages(task, db, search_roles)
-    #     except Exception as e:
-    #         print(f"⚠️ KB Scan Error: {e}")
+                 fetch_jobspy(role, location, filters, db)
 
     db.commit()
-    print("✅ Deep Scan task completed")
+    print("✅ Search completed.")
 
-def handle_ats_task(task, db):
-    """Analyzes a resume against a job description."""
-    print(f"📄 Processing ATS task {task.id}")
-    payload = task.payload or {}
-    resume_text = payload.get("resume_text", "")
-    resume_url = payload.get("resume_url")
-    job_description = payload.get("job_description", "")
-    job_id = payload.get("job_id")
+def handle_ats_task(resume_text, job_description, user_id, job_id=None, resume_url=None, db=None):
+    """Analyzes a resume against a job description.
+    
+    Args:
+        resume_text: Raw resume text
+        job_description: Raw job description text
+        user_id: User ID for storing results
+        job_id: Optional job ID
+        resume_url: Optional URL to download PDF resume from
+        db: SQLAlchemy session
+    """
+    print(f"📄 Processing ATS analysis for user: {user_id}")
 
     if resume_url:
         print(f"   📥 Downloading Resume: {resume_url}")
@@ -693,7 +671,7 @@ def handle_ats_task(task, db):
             VALUES (:user_id, :job_id, :score, :missing, :recs)
         """)
         db.execute(stmt, {
-            "user_id": task.user_id, "job_id": job_id, "score": score,
+            "user_id": user_id, "job_id": job_id, "score": score,
             "missing": json.dumps(missing), "recs": json.dumps(recommendations)
         })
         print(f"✅ ATS Score Saved: {score}")
@@ -702,34 +680,27 @@ def handle_ats_task(task, db):
     db.commit()
 
 # =============================================================================
-# MAIN ORCHESTRATOR — Continuous Worker Mode
+# MAIN — On-Demand CLI Entry Point
 # =============================================================================
 
-# Graceful shutdown flag
-_shutdown_requested = False
-
-def _signal_handler(signum, frame):
-    """Handle SIGINT/SIGTERM for graceful shutdown."""
-    global _shutdown_requested
-    _shutdown_requested = True
-    print("\n🛑 Shutdown signal received. Finishing current work...")
-
-# Poll / sleep intervals (seconds)
-IDLE_SLEEP = 10   # Sleep when no tasks found
-BATCH_SLEEP = 5   # Sleep between task batches
-ERROR_SLEEP = 15  # Sleep after unexpected errors
-
 def main():
-    global _shutdown_requested
+    import argparse
 
-    # Register signal handlers for graceful shutdown
-    signal.signal(signal.SIGINT, _signal_handler)
-    signal.signal(signal.SIGTERM, _signal_handler)
+    parser = argparse.ArgumentParser(description="KaryaSync Job Agent — On-Demand Execution")
+    parser.add_argument("--skills", type=str, required=True, help="Comma-separated skills/roles to search (e.g. 'React Developer,Python Engineer')")
+    parser.add_argument("--location", type=str, default="India", help="Location to search in (default: India)")
+    parser.add_argument("--job_type", type=str, default=None, choices=["fulltime", "internship"], help="Job type filter")
+    parser.add_argument("--limit", type=int, default=20, help="Max results per query (default: 20)")
+    parser.add_argument("--mode", type=str, default="FAST", choices=["FAST", "DEEP"], help="Scan mode: FAST (Adzuna) or DEEP (JobSpy)")
+    parser.add_argument("--experience", type=int, default=0, help="Years of experience (default: 0)")
+    
+    args = parser.parse_args()
 
-    print("🚀 Agent Starting... (Continuous Worker Mode)")
-    print(f"   ⏱️  Polling every {IDLE_SLEEP}s | Batch gap {BATCH_SLEEP}s")
+    print("🚀 Agent Started (On-Demand Mode)")
+    print(f"   Skills: {args.skills}")
+    print(f"   Location: {args.location} | Mode: {args.mode} | Type: {args.job_type or 'any'}")
 
-    # Establish persistent DB session
+    # Connect to database
     try:
         db = SessionLocal()
         print("✅ Database Connected")
@@ -737,67 +708,25 @@ def main():
         print(f"❌ Fatal Error: DB Connection Failed: {e}")
         sys.exit(1)
 
-    # ── Worker Loop ──────────────────────────────────────────────────────
     try:
-        while not _shutdown_requested:
-            try:
-                print("⏳ Checking for pending tasks...")
+        skills_list = [s.strip() for s in args.skills.split(",") if s.strip()]
+        
+        run_search(
+            skills=skills_list,
+            location=args.location,
+            job_type=args.job_type,
+            limit=args.limit,
+            scan_mode=args.mode,
+            experience_years=args.experience,
+            db=db
+        )
 
-                # Fetch all pending tasks
-                stmt = select(SearchQueue).where(SearchQueue.status == SearchStatus.PENDING)
-                tasks = db.execute(stmt).scalars().all()
-
-                if not tasks:
-                    print("📭 No tasks found, waiting...")
-                    time.sleep(IDLE_SLEEP)
-                    continue
-
-                print(f"📋 Found {len(tasks)} pending task(s).")
-
-                for task in tasks:
-                    if _shutdown_requested:
-                        print("🛑 Shutdown requested, stopping task processing.")
-                        break
-
-                    print(f"⚡ Processing Task ID: {task.id}")
-
-                    try:
-                        task.status = SearchStatus.PROCESSING
-                        db.commit()
-
-                        filters = task.filters or {}
-                        task_type = getattr(task, 'task_type', 'SEARCH')
-
-                        # Execute
-                        if task_type == 'ATS':
-                            handle_ats_task(task, db)
-                        else:
-                            handle_search_task(task, db)
-
-                        task.status = SearchStatus.COMPLETED
-                        db.commit()
-                        print(f"✅ Task {task.id} completed.")
-
-                    except Exception as e:
-                        print(f"❌ Task {task.id} failed: {e}")
-                        task.status = SearchStatus.FAILED
-                        try:
-                            db.commit()
-                        except Exception:
-                            db.rollback()
-
-                # Brief pause between batches to avoid tight looping
-                if not _shutdown_requested:
-                    time.sleep(BATCH_SLEEP)
-
-            except Exception as e:
-                print(f"❌ Unexpected error in worker loop: {e}")
-                try:
-                    db.rollback()
-                except Exception:
-                    pass
-                print(f"⏳ Retrying in {ERROR_SLEEP}s...")
-                time.sleep(ERROR_SLEEP)
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
     finally:
         try:
@@ -806,7 +735,8 @@ def main():
         except Exception:
             pass
 
-    print("🏁 Agent shut down gracefully.")
+    print("🏁 Agent exiting.")
 
 if __name__ == "__main__":
     main()
+
